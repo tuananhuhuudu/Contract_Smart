@@ -1,6 +1,7 @@
-import { Check, Column, Entity, OneToMany, PrimaryColumn } from "typeorm";
+import { Check, Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryColumn } from "typeorm";
 import { BaseModel } from "./base.model";
 import { PaymentRule } from "./payment-rule.entity";
+import { User } from "./user.entity";
 
 /**
  * Table rule_versions: a version of all payment rules. Contracts keep the version they were created
@@ -33,12 +34,19 @@ export class RuleVersion extends BaseModel {
   @Column({ type: "text", nullable: true, comment: "Ghi chú thay đổi của phiên bản." })
   note!: string | null;
 
-  // Foreign keys to users are added with the users table.
-  @Column({ name: "created_by", type: "uuid", nullable: true, comment: "Người soạn; NULL với phiên bản của Data Pack." })
+  @Column({ name: "created_by", type: "uuid", nullable: true, comment: "Người soạn (users.id); NULL với phiên bản của Data Pack." })
   createdBy!: string | null;
 
-  @Column({ name: "published_by", type: "uuid", nullable: true, comment: "Người công bố; phải khác người soạn." })
+  @Column({ name: "published_by", type: "uuid", nullable: true, comment: "Người công bố (users.id); phải khác người soạn." })
   publishedBy!: string | null;
+
+  @ManyToOne(() => User, { onDelete: "RESTRICT", onUpdate: "CASCADE" })
+  @JoinColumn({ name: "created_by", foreignKeyConstraintName: "rule_versions_created_by_fkey" })
+  creator!: User | null;
+
+  @ManyToOne(() => User, { onDelete: "RESTRICT", onUpdate: "CASCADE" })
+  @JoinColumn({ name: "published_by", foreignKeyConstraintName: "rule_versions_published_by_fkey" })
+  publisher!: User | null;
 
   @Column({ name: "published_at", type: "timestamptz", nullable: true, comment: "Thời điểm công bố." })
   publishedAt!: Date | null;

@@ -2,14 +2,18 @@ import "./core/load-env";
 import "reflect-metadata";
 import { ValidationPipe } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
+import path from "node:path";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
 import { AllExceptionsFilter } from "./utils/exception.filter";
 import { ResponseInterceptor } from "./utils/response.interceptor";
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.setGlobalPrefix("api/v1");
+  // Plain HTML page for trying the API by hand: http://127.0.0.1:<API_PORT>/test/
+  app.useStaticAssets(path.join(process.cwd(), "public"), { prefix: "/test/" });
   // DTO validation: unknown fields are rejected (400) and query strings become typed values.
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
   app.useGlobalInterceptors(new ResponseInterceptor());

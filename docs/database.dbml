@@ -1,4 +1,4 @@
-// Contract Smart: the 10 tables that exist today (TypeORM models in apps/api/src/models).
+// Contract Smart: the 11 tables that exist today (TypeORM models in apps/api/src/models).
 // Paste into https://dbdiagram.io/d to see the diagram.
 // Every table except events also has the BaseModel columns: version, created_at, updated_at.
 // Columns the Data Pack repeats are not stored; the views engine_parties, engine_contracts,
@@ -62,8 +62,8 @@ Table rule_versions [headercolor: #7a4fd1] {
   name text
   status text [note: 'DRAFT -> PUBLISHED -> RETIRED']
   note text [null]
-  created_by uuid [null, note: 'se noi toi users']
-  published_by uuid [null, note: 'khac created_by']
+  created_by uuid [null, ref: > users.id, note: 'nguoi soan']
+  published_by uuid [null, ref: > users.id, note: 'nguoi cong bo, khac created_by']
   published_at timestamptz [null]
   version integer
   created_at timestamptz
@@ -186,6 +186,23 @@ Table events [headercolor: #b5641b] {
   Note: 'Su kien da xay ra. Chi them, khong sua, khong xoa (trigger). Khong co version, updated_at.'
 }
 
+// ============================ Nguoi dung ============================
+
+Table users [headercolor: #2f6fb3] {
+  id uuid [pk, default: `gen_random_uuid()`]
+  email text [unique, note: 'finance@novaan.vn, chu thuong']
+  password_hash text [note: 'bcrypt, khong tra ra API']
+  full_name text
+  role text [note: 'CONTRACT_OWNER | LEGAL_REVIEWER | FINANCE_APPROVER | SECONDARY_APPROVER | ADMIN_AUDITOR | SUPPLIER | SYSTEM_ADMIN | AUDITOR']
+  party_id text [null, ref: > parties.party_id, note: 'ben ma nguoi dung lam viec cho; NULL voi SYSTEM_ADMIN, AUDITOR']
+  active boolean [default: true]
+  last_login_at timestamptz [null]
+  version integer
+  created_at timestamptz
+  updated_at timestamptz
+  Note: 'Tai khoan dang nhap. Ben (parties) quyet dinh nguoi dung thay hop dong nao.'
+}
+
 // Composite key: a stage's rule set must belong to the same contract type.
 Ref: contract_type_stages.(contract_type, release_rule_code) > rule_scopes.(contract_type, release_rule_code)
 
@@ -206,4 +223,8 @@ TableGroup hop_dong {
 TableGroup su_kien {
   event_types
   events
+}
+
+TableGroup nguoi_dung {
+  users
 }

@@ -21,6 +21,7 @@ export const databaseOptions: DataSourceOptions = {
   entities: [path.join(__dirname, "..", "models", "*.entity.{ts,js}")],
   // Tables change only through migrations, never automatically.
   synchronize: false,
+  uuidExtension: "pgcrypto", // gen_random_uuid() is built into Postgres 13+, no extension needed
 };
 
 /** Used by the TypeORM CLI to generate and run migrations (like alembic.ini + env.py). */

@@ -6,7 +6,7 @@ Tài liệu này mô tả **các bảng đang có thật** trong database. Sơ �
 
 ## 1. Tổng quan
 
-Có **10 bảng**, chia 3 nhóm, phục vụ luồng: loại hợp đồng → khuôn mốc + bộ luật → phiên bản luật → hợp đồng → mốc → (engine chấm từng mốc).
+Có **11 bảng**, chia 4 nhóm, phục vụ luồng: loại hợp đồng → khuôn mốc + bộ luật → phiên bản luật → hợp đồng → mốc → (engine chấm từng mốc).
 
 | Nhóm | Bảng | Vai trò |
 | --- | --- | --- |
@@ -20,6 +20,7 @@ Có **10 bảng**, chia 3 nhóm, phục vụ luồng: loại hợp đồng → k
 | | `milestones` | Mốc thanh toán thật của hợp đồng |
 | Sự kiện | `event_types` | Danh mục loại sự kiện (giao hàng, hóa đơn, duyệt...) |
 | | `events` | Những việc đã xảy ra: giao hàng, hóa đơn, duyệt, tranh chấp... (chỉ thêm) |
+| Người dùng | `users` | Tài khoản đăng nhập, vai trò, bên mà người đó làm việc cho |
 
 ```
 contract_types ──< rule_scopes ──< payment_rules >── rule_versions
@@ -29,6 +30,7 @@ contract_types ──< rule_scopes ──< payment_rules >── rule_versions
               └──< milestones ──> rule_scopes
                        └──< events >── parties
                               └──> event_types
+users ──> parties          rule_versions ──> users (người soạn, người công bố)
 ```
 `A ──< B`: một A có nhiều B. `A ──> B`: A trỏ tới B.
 
@@ -132,7 +134,7 @@ Mốc mẫu chỉ trỏ tới **bộ luật** (`rule_scopes`), không nối th�
 
 Một phiên bản của **toàn bộ** luật. Vòng đời chỉ đi tiến: `DRAFT` (đang soạn, sửa được) → `PUBLISHED` (đang dùng, luật bị khóa) → `RETIRED` (ngừng dùng cho hợp đồng mới). Công bố bản mới thì bản đang dùng chuyển sang `RETIRED`. Hợp đồng giữ phiên bản lúc tạo (`contracts.rule_version_id`), nên mọi quyết định cũ vẫn giải thích được bằng đúng bộ luật đã dùng.
 
-Trigger: `rule_versions_status_guard` chặn đi lùi trạng thái. `created_by`, `published_by` sẽ nối khóa ngoại tới `users` khi có bảng này.
+Trigger: `rule_versions_status_guard` chặn đi lùi trạng thái. `created_by`, `published_by` là khóa ngoại tới `users.id`.
 
 | Cột | Kiểu | Bắt buộc | Mặc định | Khóa | Ý nghĩa |
 | --- | --- | --- | --- | --- | --- |
@@ -143,8 +145,8 @@ Trigger: `rule_versions_status_guard` chặn đi lùi trạng thái. `created_by
 | `name` | text | ✓ |  |  | Tên phiên bản, ví dụ Data Pack. |
 | `status` | text | ✓ | 'DRAFT' |  | DRAFT (đang soạn, sửa được) -> PUBLISHED (đang dùng, khóa) -> RETIRED (ngừng dùng cho hợp đồng mới). |
 | `note` | text |  |  |  | Ghi chú thay đổi của phiên bản. |
-| `created_by` | uuid |  |  |  | Người soạn; NULL với phiên bản của Data Pack. |
-| `published_by` | uuid |  |  |  | Người công bố; phải khác người soạn. |
+| `created_by` | uuid |  |  | FK → `users.id` | Người soạn; NULL với phiên bản của Data Pack. |
+| `published_by` | uuid |  |  | FK → `users.id` | Người công bố; phải khác người soạn. |
 | `published_at` | timestamptz |  |  |  | Thời điểm công bố. |
 
 **Ràng buộc**
@@ -188,7 +190,7 @@ Trigger: `payment_rules_version_frozen` chặn thêm/sửa/xóa luật của phi
 
 ### 3.6 `parties`: Các bên
 
-Các bên của Data Pack: bên mua (`Bxxx`), nhà cung cấp (`Sxxx`), người phê duyệt của bên mua (`Axxx`, có `parent_party_id`). Đây là **công ty / vai trò trong hợp đồng**, không phải tài khoản đăng nhập; người dùng (`users`, chưa làm) sẽ trỏ tới bên mà họ đại diện. Các cột quyền (`allowed_event_types`, `can_approve_payment`, `approval_limit_vnd_mn`) là **quyền nghiệp vụ** engine dùng để kiểm sự kiện hợp lệ.
+Các bên của Data Pack: bên mua (`Bxxx`), nhà cung cấp (`Sxxx`), người phê duyệt của bên mua (`Axxx`, có `parent_party_id`). Đây là **công ty / vai trò trong hợp đồng**, không phải tài khoản đăng nhập; người dùng (`users`, mục 3.11) trỏ tới bên mà họ làm việc cho. Các cột quyền (`allowed_event_types`, `can_approve_payment`, `approval_limit_vnd_mn`) là **quyền nghiệp vụ** engine dùng để kiểm sự kiện hợp lệ.
 
 | Cột | Kiểu | Bắt buộc | Mặc định | Khóa | Ý nghĩa |
 | --- | --- | --- | --- | --- | --- |
@@ -344,6 +346,44 @@ Các loại sự kiện được phép dùng. **Sự kiện** (`events.event_typ
 - `event_types_category_check`, `event_types_side_check`: giá trị nằm trong danh sách.
 - `event_types_evidence_side_check`: có `actor_side` **khi và chỉ khi** là `EVIDENCE`.
 
+### 3.11 `users`: Người dùng
+
+Tài khoản đăng nhập. **Bên** (`parties`) là công ty hoặc vai trò trong hợp đồng; **người dùng** là người thật bấm nút. Mỗi người dùng làm việc cho **một bên**, và bên đó quyết định người dùng thấy hợp đồng nào: chỉ những hợp đồng mà bên của mình (hoặc bên mua cha, với người phê duyệt) là bên mua hoặc nhà cung cấp.
+
+| Vai trò (`role`) | Thuộc bên | Làm gì |
+| --- | --- | --- |
+| `CONTRACT_OWNER` | người phê duyệt (Axxx) | Chủ hợp đồng phía bên mua; duyệt mốc |
+| `FINANCE_APPROVER` | người phê duyệt (Axxx) | Duyệt chi theo hạn mức |
+| `SECONDARY_APPROVER` | người phê duyệt (Axxx) | Người duyệt thứ hai |
+| `LEGAL_REVIEWER` | bên mua (Bxxx) | Rà soát pháp lý, ghi chứng từ phía bên mua |
+| `ADMIN_AUDITOR` | bên mua hoặc nhà cung cấp | Kiểm soát viên: xử lý ngoại lệ của tổ chức mình |
+| `SUPPLIER` | nhà cung cấp (Sxxx) | Ghi giao hàng, hóa đơn... |
+| `SYSTEM_ADMIN` | không | Quản lý tài khoản và cấu hình; không xử lý nghiệp vụ |
+| `AUDITOR` | không | Chỉ đọc |
+
+Tách quyền (SoD-1): kiểm soát viên xử lý ngoại lệ, quản trị hệ thống chỉ quản lý tài khoản và cấu hình, kiểm toán chỉ đọc. Vai trò hợp với loại bên (ví dụ `SUPPLIER` phải thuộc bên `SUPPLIER`) do API kiểm khi tạo tài khoản, vì CHECK không nhìn sang bảng khác.
+
+| Cột | Kiểu | Bắt buộc | Mặc định | Khóa | Ý nghĩa |
+| --- | --- | --- | --- | --- | --- |
+| `version` | integer | ✓ | 1 |  | Số phiên bản, tăng mỗi lần sửa (khóa lạc quan). |
+| `created_at` | timestamptz | ✓ | now() |  | Thời điểm tạo dòng. |
+| `updated_at` | timestamptz | ✓ | now() |  | Thời điểm sửa gần nhất. |
+| `id` | uuid | ✓ | gen_random_uuid() | PK | Mã người dùng (tự sinh). |
+| `email` | text | ✓ |  | UNIQUE | Email đăng nhập, chữ thường. |
+| `password_hash` | text | ✓ |  |  | Mật khẩu đã băm (bcrypt); không lưu mật khẩu gốc, API không bao giờ trả cột này. |
+| `full_name` | text | ✓ |  |  | Họ tên hiển thị. |
+| `role` | text | ✓ |  |  | Một trong 8 vai trò ở bảng trên. |
+| `party_id` | text |  |  | FK → `parties.party_id` | Bên mà người dùng làm việc cho; NULL với `SYSTEM_ADMIN`, `AUDITOR`. |
+| `active` | boolean | ✓ | true |  | FALSE: tài khoản bị khóa, không đăng nhập được. |
+| `last_login_at` | timestamptz |  |  |  | Lần đăng nhập gần nhất. |
+
+**Ràng buộc**
+
+- `users_email_key`: email không trùng.
+- `users_email_check`: email viết thường, không khoảng trắng thừa, có dạng `a@b.c`.
+- `users_role_check`: vai trò nằm trong 8 giá trị.
+- `users_party_check`: `SYSTEM_ADMIN`, `AUDITOR` **không** có bên; mọi vai trò khác **bắt buộc** có bên.
+
 ## 4. View cho engine
 
 Engine đọc đúng các cột của Data Pack. 4 view dựng lại các cột không lưu; API xuất dữ liệu cho engine bằng các view này.
@@ -382,6 +422,7 @@ Lỗi do trigger trả về API là **409** kèm mã lỗi (`RULE_VERSION_IS_FRO
 | `DropOrigin` | Bỏ cột `origin` ở mọi bảng và trigger khóa dữ liệu Data Pack |
 | `Events` | Bảng `events`, trigger chỉ thêm, view `engine_events` |
 | `EventTypes` | Bảng `event_types` (nạp sẵn 16 loại); `events.event_type` thành khóa ngoại |
+| `Users` | Bảng `users`; `rule_versions.created_by`, `published_by` thành khóa ngoại tới `users` |
 
 ## 7. Lệnh thường dùng
 
@@ -397,4 +438,4 @@ Chạy trong `apps/api`, Postgres đang chạy (`pnpm db:up` ở thư mục gố
 
 ## 8. Chưa có
 
-`exception_requests` (hủy sự kiện sai), `engine_runs`, `milestone_evaluations`, `milestone_status_history` (kết quả chấm), `payments`, `milestone_notes`, `organizations`, `users`, `audit_log`; script seed nạp Data Pack.
+`exception_requests` (hủy sự kiện sai), `engine_runs`, `milestone_evaluations`, `milestone_status_history` (kết quả chấm), `payments`, `milestone_notes`, `audit_log`; API đăng nhập (JWT) và quản lý người dùng; script seed nạp Data Pack và tài khoản demo.
