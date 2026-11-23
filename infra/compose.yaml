@@ -1,0 +1,29 @@
+# Local PostgreSQL for development: pnpm db:up / pnpm db:down.
+# Remove the data and start over: docker compose -f infra/compose.yaml down -v
+name: contract-smart
+services:
+  postgres:
+    image: postgres:17.6
+    environment:
+      POSTGRES_DB: contract_smart
+      POSTGRES_USER: dev
+      # Local development only.
+      POSTGRES_PASSWORD: dev
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "dev", "-d", "contract_smart"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  # Web UI for the database: http://127.0.0.1:8080 (system PostgreSQL, server postgres, user dev).
+  adminer:
+    image: adminer:4.8.1
+    ports: ["127.0.0.1:8080:8080"]
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+volumes:
+  pgdata:
