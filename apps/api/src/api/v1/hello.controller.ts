@@ -1,10 +1,12 @@
 import { Controller, Get, Query } from "@nestjs/common";
 import { ApiOperation, ApiQuery, ApiExcludeController } from "@nestjs/swagger";
+import { Public } from "../../core/security/decorators";
 import type { HelloResponse } from "../../schemas/hello.schema";
 import { HelloService } from "../../services/hello.service";
 
 /** Layer 1, HTTP (like api_*.py): reads the request, calls the service, returns the result. */
 @ApiExcludeController()
+@Public()
 @Controller("hello")
 export class HelloController {
   constructor(private readonly service: HelloService) {}

@@ -3,6 +3,7 @@
  * main.ts declares them in this order with their description, so /api/docs reads top to bottom.
  */
 export const API_TAGS = [
+  ["0 Đăng nhập", "Đăng nhập lấy token, tự đăng ký, xem mình là ai."],
   ["1.1 Loại sự kiện", "Danh mục các nút bấm để ghi sự kiện (Giao hàng, Hóa đơn, Phê duyệt...)."],
   ["1.2 Các bên", "Bên mua, nhà cung cấp, người phê duyệt của bên mua."],
   ["2.1 Thư viện mốc", "Mốc thanh toán dùng chung; mỗi mốc có các phiên bản."],
@@ -19,6 +20,7 @@ type TagName = (typeof API_TAGS)[number][0];
 const tag = <T extends TagName>(name: T): T => name;
 
 export const TAG = {
+  auth: tag("0 Đăng nhập"),
   eventTypes: tag("1.1 Loại sự kiện"),
   parties: tag("1.2 Các bên"),
   milestoneLibrary: tag("2.1 Thư viện mốc"),

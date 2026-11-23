@@ -81,7 +81,23 @@ Bên mua, nhà cung cấp, người phê duyệt của bên mua. Là **công ty 
 | `party_id` | integer |  |  | FK → `parties.id` | Bên mà người dùng làm việc cho; NULL với SYSTEM_ADMIN, AUDITOR. |
 | `active` | boolean | ✓ | true |  | FALSE: khóa tài khoản. |
 
-**Ràng buộc:** SYSTEM_ADMIN, AUDITOR **không** có bên, các vai trò khác **bắt buộc** có; email viết thường, đúng dạng, không trùng. Chưa có tài khoản nào (chờ API đăng nhập).
+**Ràng buộc:** SYSTEM_ADMIN, AUDITOR **không** có bên, các vai trò khác **bắt buộc** có; email viết thường, đúng dạng, không trùng.
+
+**Đăng nhập:** `POST /auth/login` trả JWT (8 giờ); mọi API khác cần `Authorization: Bearer <token>` (trên Swagger: nút **Authorize**). Mỗi lần gọi, API đọc lại người dùng từ DB, nên khóa tài khoản hay đổi vai trò có hiệu lực ngay. `POST /auth/register` tạo tài khoản **AUDITOR, không có bên** (chỉ xem) cho tới khi quản trị gán vai trò.
+
+**Tài khoản demo** (nạp bởi `pnpm db:seed`, mật khẩu `SEED_PASSWORD` trong `apps/api/.env`, để trống thì là `Passw0rd!`):
+
+| Email | Vai trò | Bên |
+| --- | --- | --- |
+| admin@contract-smart.vn | SYSTEM_ADMIN | — |
+| auditor@contract-smart.vn | AUDITOR | — |
+| legal@novaan.vn | LEGAL_REVIEWER | Nova An Business JSC (bên mua) |
+| owner@novaan.vn | CONTRACT_OWNER | Contract Owner - Nova An Business JSC |
+| finance@novaan.vn | FINANCE_APPROVER | Finance Approver - Nova An Business JSC |
+| secondary@novaan.vn | SECONDARY_APPROVER | Secondary Approver - Nova An Business JSC |
+| controller@novaan.vn | ADMIN_AUDITOR | Nova An Business JSC |
+| supplier@phuminh.vn | SUPPLIER | Phú Minh Technology JSC (nhà cung cấp) |
+| controller@phuminh.vn | ADMIN_AUDITOR | Phú Minh Technology JSC |
 
 ## 4. Nhóm 2: thư viện mốc
 
@@ -240,7 +256,7 @@ contracts ──< milestones ──> milestone_versions (luật chung, hoặc lu
 
 ## 7. Dữ liệu mẫu
 
-`pnpm db:seed` (trong `apps/api`) đọc `data/datapack/*.csv` của BTC và nạp lại từ đầu (xóa rồi nạp). Mã trong CSV (`B009`, `S021`...) chỉ dùng để nối dòng lúc nạp; DB giữ `id` tự sinh. Hiện nạp: **65 bên** (10 bên mua, 25 nhà cung cấp, 30 người phê duyệt). Thư viện mốc, loại hợp đồng, hợp đồng và sự kiện **chưa nạp** dữ liệu mẫu. Quyền `DISPUTE` trong CSV được đổi thành cả Mở tranh chấp và Đóng tranh chấp.
+`pnpm db:seed` (trong `apps/api`) đọc `data/datapack/*.csv` của BTC và nạp lại từ đầu (xóa rồi nạp). Mã trong CSV (`B009`, `S021`...) chỉ dùng để nối dòng lúc nạp; DB giữ `id` tự sinh. Hiện nạp: **65 bên** (10 bên mua, 25 nhà cung cấp, 30 người phê duyệt) và **9 tài khoản demo**. Thư viện mốc, loại hợp đồng, hợp đồng và sự kiện **chưa nạp** dữ liệu mẫu. Quyền `DISPUTE` trong CSV được đổi thành cả Mở tranh chấp và Đóng tranh chấp.
 
 ## 8. Migration
 

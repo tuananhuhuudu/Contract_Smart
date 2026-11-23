@@ -25,7 +25,9 @@ async function bootstrap(): Promise<void> {
     .setTitle("Contract Smart API")
     .setDescription("Luồng: 1. danh mục, các bên → 2. thư viện mốc (phiên bản, luật) → 3. loại hợp đồng (khuôn) → 4. hợp đồng (mốc, sự kiện)")
     .setVersion("0.1.0")
-    .addBearerAuth();
+    .addBearerAuth()
+    // Every endpoint sends the token once you click Authorize (except login and register, which ignore it).
+    .addSecurityRequirements("bearer");
   for (const [name, description] of API_TAGS) builder.addTag(name, description);
   const docs = builder.build();
   SwaggerModule.setup("api/docs", app, () => SwaggerModule.createDocument(app, docs), {
