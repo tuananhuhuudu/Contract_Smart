@@ -1,9 +1,41 @@
+# Dependencies
 node_modules/
+.pnpm-store/
+
+# Build output
 dist/
-coverage/
+build/
 *.tsbuildinfo
+
+# Tests
+coverage/
+
+# Environment and secrets: only the example is committed
 .env
 .env.*
 !.env.example
-__pycache__/
+*.pem
+*.key
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editors and OS files
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
 .DS_Store
+Thumbs.db
+
+# Python (engine, text2sql)
+__pycache__/
+*.pyc
+.venv/
+
+# Local scratch
+tmp/
+*.tmp

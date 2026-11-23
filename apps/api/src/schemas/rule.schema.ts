@@ -76,7 +76,7 @@ export class CreateRuleVersionDto {
 
 // ---------- payment rules ----------
 
-/** POST /payment-rules: a rule in a DRAFT version. The Data Pack columns of the rule set are filled in. */
+/** POST /payment-rules: a rule in a DRAFT version; it gets the next PR code. */
 export class CreatePaymentRuleDto {
   @IsString()
   ruleVersionId!: string;
@@ -121,14 +121,6 @@ export class CreatePaymentRuleDto {
   @IsString()
   @Length(1, 2000)
   ruleDescriptionVi!: string;
-
-  @IsOptional()
-  @IsBoolean()
-  stopProcessing?: boolean;
-
-  @IsOptional()
-  @IsString()
-  parameterSource?: string;
 }
 
 /** PATCH /payment-rules/:ruleId: only while its version is a DRAFT (the database refuses otherwise). */
@@ -143,7 +135,6 @@ export class UpdatePaymentRuleDto extends PartialType(
     "payableAmountFormula",
     "penaltyAmountFormula",
     "ruleDescriptionVi",
-    "stopProcessing",
   ] as const),
 ) {
   @Type(() => Number)

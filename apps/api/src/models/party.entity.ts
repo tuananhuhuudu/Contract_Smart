@@ -1,5 +1,5 @@
 import { Check, Column, Entity, JoinColumn, ManyToOne, PrimaryColumn } from "typeorm";
-import { BaseModel, ORIGIN_CHECK } from "./base.model";
+import { BaseModel } from "./base.model";
 
 /** Table parties (Data Pack columns): buyers, suppliers and the buyers' approvers. */
 @Entity({ name: "parties", comment: "Các bên tham gia: bên mua, nhà cung cấp, người phê duyệt của bên mua." })
@@ -10,7 +10,6 @@ import { BaseModel, ORIGIN_CHECK } from "./base.model";
 @Check("parties_approval_level_check", `"approval_level" >= 0`)
 @Check("parties_limit_check", `"approval_limit_vnd_mn" >= 0`)
 @Check("parties_status_check", `"status" IN ('ACTIVE', 'INACTIVE')`)
-@Check("parties_origin_check", ORIGIN_CHECK)
 export class Party extends BaseModel {
   @PrimaryColumn({ name: "party_id", type: "text", comment: "Mã bên: Bxxx bên mua, Sxxx nhà cung cấp, Axxx người phê duyệt." })
   partyId!: string;
@@ -30,8 +29,6 @@ export class Party extends BaseModel {
   @Column({ type: "text", comment: "Khu vực, ví dụ HANOI." })
   region!: string;
 
-  @Column({ type: "text", default: "VN", comment: "Mã quốc gia." })
-  country!: string;
 
   @Column({ name: "approval_role", type: "text", default: "NONE", comment: "Vai trò phê duyệt; NONE với bên mua và nhà cung cấp." })
   approvalRole!: string;
@@ -54,8 +51,6 @@ export class Party extends BaseModel {
   @Column({ type: "text", default: "ACTIVE", comment: "ACTIVE hoặc INACTIVE." })
   status!: string;
 
-  @Column({ name: "data_is_synthetic", type: "boolean", default: true, comment: "Dữ liệu giả lập của đề." })
-  dataIsSynthetic!: boolean;
 
   @ManyToOne(() => Party, { nullable: true, onDelete: "RESTRICT", onUpdate: "CASCADE" })
   @JoinColumn({ name: "parent_party_id", referencedColumnName: "partyId", foreignKeyConstraintName: "parties_parent_fkey" })

@@ -1,5 +1,5 @@
 import { Check, Column, Entity, JoinColumn, ManyToOne, PrimaryColumn, Unique } from "typeorm";
-import { BaseModel, ORIGIN_CHECK } from "./base.model";
+import { BaseModel } from "./base.model";
 import { ContractType } from "./contract-type.entity";
 
 /**
@@ -19,7 +19,6 @@ import { ContractType } from "./contract-type.entity";
 @Check("rule_scopes_code_check", `"release_rule_code" ~ '^[A-Z][A-Z0-9_]*:[A-Z][A-Z0-9_]*$'`)
 @Check("rule_scopes_milestone_type_check", `"milestone_type" ~ '^[A-Z][A-Z0-9_]*$'`)
 @Check("rule_scopes_name_check", `length(trim("name")) > 0`)
-@Check("rule_scopes_origin_check", ORIGIN_CHECK)
 export class RuleScope extends BaseModel {
   @PrimaryColumn({
     name: "release_rule_code",

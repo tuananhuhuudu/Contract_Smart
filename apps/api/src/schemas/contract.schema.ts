@@ -1,5 +1,5 @@
 import { Type } from "class-transformer";
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from "class-validator";
+import { IsIn, IsInt, IsOptional, IsString, Length, Matches, Max, Min } from "class-validator";
 import { ListQueryDto } from "./base.schema";
 import { CODE, DECIMAL_2, ISO_DATE } from "./common.schema";
 
@@ -42,12 +42,9 @@ export class CreateContractDto {
   @Matches(ISO_DATE)
   endDate!: string;
 
+  /** The number of approvers and their roles follow from it. */
   @IsIn(APPROVAL_POLICIES)
   approvalPolicy!: ApprovalPolicy;
-
-  @IsOptional()
-  @IsBoolean()
-  autoReleaseAllowed?: boolean;
 
   @Type(() => Number)
   @IsInt()

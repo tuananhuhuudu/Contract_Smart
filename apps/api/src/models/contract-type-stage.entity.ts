@@ -1,5 +1,5 @@
 import { Check, Column, Entity, JoinColumn, ManyToOne, PrimaryColumn } from "typeorm";
-import { BaseModel, ORIGIN_CHECK } from "./base.model";
+import { BaseModel } from "./base.model";
 import { ContractType } from "./contract-type.entity";
 import { RuleScope } from "./rule-scope.entity";
 
@@ -13,7 +13,6 @@ import { RuleScope } from "./rule-scope.entity";
 @Check("stages_events_check", `cardinality("required_event_types") >= 1`)
 @Check("stages_offset_check", `"offset_days" >= 0`)
 @Check("stages_name_check", `length(trim("name")) > 0`)
-@Check("stages_origin_check", ORIGIN_CHECK)
 export class ContractTypeStage extends BaseModel {
   @PrimaryColumn({ name: "contract_type", type: "text", comment: "Loại hợp đồng của mốc mẫu." })
   contractType!: string;

@@ -9,26 +9,11 @@ import { ContractTypeStageRepository } from "../repositories/contract-type-stage
 import { ContractTypeRepository } from "../repositories/contract-type.repository";
 import { PartyRepository } from "../repositories/party.repository";
 import { RuleVersionRepository } from "../repositories/rule.repository";
-import type { ApprovalPolicy, ContractListQuery, CreateContractDto } from "../schemas/contract.schema";
+import type { ContractListQuery, CreateContractDto } from "../schemas/contract.schema";
 import { addDays } from "../utils/dates";
 import { splitByPercent, sumPercents } from "../utils/money";
 import type { Paginated } from "../utils/paging";
 import { BaseService } from "./base.service";
-
-/** Approver roles each approval policy needs (Data Pack convention). */
-const APPROVAL_ROLES: Record<ApprovalPolicy, string[]> = {
-  AUTO_IF_ALL_CONDITIONS: [],
-  SINGLE_BUYER_APPROVAL: ["CONTRACT_OWNER"],
-  DUAL_APPROVAL: ["CONTRACT_OWNER", "SECONDARY_APPROVER"],
-  FINANCE_PLUS_OWNER: ["CONTRACT_OWNER", "FINANCE_APPROVER"],
-};
-
-/** Human-readable condition of a milestone, as in milestones.csv: EVENT:DELIVERY AND ... AND NO_OPEN_DISPUTE. */
-function conditionText(events: readonly string[], quorum: number): string {
-  const parts = events.map((event) => `EVENT:${event}`);
-  if (quorum > 0) parts.push(`APPROVALS>=${quorum}`);
-  return [...parts, "NO_OPEN_DISPUTE"].join(" AND ");
-}
 
 @Injectable()
 export class ContractService extends BaseService<Contract, "contractId"> {
@@ -73,6 +58,7 @@ export class ContractService extends BaseService<Contract, "contractId"> {
    * Creates a DRAFT contract and generates its milestones from the type's template, in one
    * transaction: amount = share of the value (the last stage takes the rounding remainder), due
    * date = start + offset, rule set copied from the stage, rule version = the one in use today.
+   * Approvals, grace and penalty rates are not copied: they follow from the contract (engine views).
    */
   async createContract(dto: CreateContractDto): Promise<Contract> {
     const contractId = await this.dataSource.transaction(async (db) => {
@@ -87,23 +73,8 @@ export class ContractService extends BaseService<Contract, "contractId"> {
       const ruleVersion = await this.ruleVersions.findCurrent(db);
       if (!ruleVersion) throw new BadRequestException("No published rule version: publish one before creating contracts");
 
-      const policy = dto.approvalPolicy;
-      const roles = APPROVAL_ROLES[policy];
       const id = await nextCode(db, "contracts", "contract_id", "CT", 4);
-      await this.contracts.create(
-        {
-          ...dto,
-          contractId: id,
-          workflowTemplate: type.workflowTemplate,
-          ruleSetId: type.ruleSetId,
-          ruleVersionId: ruleVersion.id,
-          approvalQuorum: roles.length,
-          autoReleaseAllowed: dto.autoReleaseAllowed ?? policy === "AUTO_IF_ALL_CONDITIONS",
-          lifecycle: "DRAFT",
-          dataIsSynthetic: false,
-        },
-        db,
-      );
+      await this.contracts.create({ ...dto, contractId: id, ruleVersionId: ruleVersion.id, lifecycle: "DRAFT" }, db);
 
       const amounts = splitByPercent(dto.contractValueVndMn, template.map((s) => s.paymentPercent));
       const ids = await nextCodes(db, "milestones", "milestone_id", "MS", 4, template.length);
@@ -112,24 +83,13 @@ export class ContractService extends BaseService<Contract, "contractId"> {
           milestoneId: ids[i]!,
           contractId: id,
           milestoneSequence: stage.sequence,
-          milestoneType: stage.milestoneType,
           milestoneName: stage.name,
           dueDate: addDays(dto.startDate, stage.offsetDays),
-          paymentPercent: stage.paymentPercent,
           plannedPaymentVndMn: amounts[i]!,
           requiredEventTypes: stage.requiredEventTypes,
-          requiredCondition: conditionText(stage.requiredEventTypes, roles.length),
           invoiceRequired: stage.invoiceRequired,
-          approvalRequired: roles.length > 0,
-          requiredApprovalQuorum: roles.length,
-          requiredApprovalRoles: roles,
           latePenaltyApplicable: stage.latePenaltyApplicable,
-          gracePeriodDays: dto.gracePeriodDays,
-          // A stage without late penalties carries no penalty rate, as in the Data Pack.
-          penaltyRatePctPerDay: stage.latePenaltyApplicable ? dto.penaltyRatePctPerDay : "0",
-          maxPenaltyPct: stage.latePenaltyApplicable ? dto.maxPenaltyPct : "0",
           releaseRuleCode: stage.releaseRuleCode,
-          dataIsSynthetic: false,
         })),
         db,
       );

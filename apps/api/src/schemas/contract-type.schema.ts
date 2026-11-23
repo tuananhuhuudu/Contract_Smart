@@ -28,14 +28,6 @@ export class CreateContractTypeDto {
   @Length(1, 200)
   name!: string;
 
-  /** WF_GOODS_4STAGE */
-  @Matches(CODE)
-  workflowTemplate!: string;
-
-  /** R_GOODS_STD */
-  @Matches(CODE)
-  ruleSetId!: string;
-
   @IsOptional()
   @IsBoolean()
   active?: boolean;

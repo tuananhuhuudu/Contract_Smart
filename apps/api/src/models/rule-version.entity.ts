@@ -1,5 +1,5 @@
 import { Check, Column, Entity, OneToMany, PrimaryColumn } from "typeorm";
-import { BaseModel, ORIGIN_CHECK } from "./base.model";
+import { BaseModel } from "./base.model";
 import { PaymentRule } from "./payment-rule.entity";
 
 /**
@@ -16,7 +16,6 @@ import { PaymentRule } from "./payment-rule.entity";
 // Two people: whoever wrote the version does not publish it.
 @Check("rule_versions_two_people_check", `"published_by" IS NULL OR "created_by" IS NULL OR "published_by" <> "created_by"`)
 @Check("rule_versions_name_check", `length(trim("name")) > 0`)
-@Check("rule_versions_origin_check", ORIGIN_CHECK)
 export class RuleVersion extends BaseModel {
   @PrimaryColumn({ type: "text", comment: "Mã phiên bản, ví dụ v1." })
   id!: string;

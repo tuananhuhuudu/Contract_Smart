@@ -39,13 +39,20 @@ export class RuleService {
     return this.scopes.findById(code);
   }
 
+  /**
+   * A rule set is named <rule set of the type>:<milestone type> (R_GOODS_STD:DELIVERY), as in the
+   * Data Pack: the part after ":" is the milestone type, and every rule set of one contract type
+   * shares the part before it.
+   */
   async createScope(dto: CreateRuleScopeDto): Promise<RuleScope> {
     const type = await this.dataSource.getRepository(ContractType).findOneBy({ code: dto.contractType });
     if (!type) throw new BadRequestException(`Contract type ${dto.contractType} does not exist`);
-    // Keep the organiser's naming: <rule set of the type>:<milestone type>.
-    const expected = `${type.ruleSetId}:${dto.milestoneType}`;
-    if (dto.releaseRuleCode !== expected)
-      throw new BadRequestException(`releaseRuleCode must be ${expected} for ${dto.contractType} / ${dto.milestoneType}`);
+    const [prefix, milestoneType] = dto.releaseRuleCode.split(":");
+    if (milestoneType !== dto.milestoneType)
+      throw new BadRequestException(`releaseRuleCode must end with :${dto.milestoneType}`);
+    const sibling = await this.scopes.findOne({ contractType: dto.contractType });
+    if (sibling && !sibling.releaseRuleCode.startsWith(`${prefix}:`))
+      throw new BadRequestException(`Rule sets of ${dto.contractType} start with ${sibling.releaseRuleCode.split(":")[0]}:`);
     return this.scopes.create(dto);
   }
 
@@ -81,7 +88,7 @@ export class RuleService {
       if (source) {
         const copies = (await this.rules.listByVersion(source.id, db)).map((rule) => {
           // Drop the key, the version link and the bookkeeping columns; keep the rule's content.
-          const { ruleId, ruleVersionId: _from, origin: _origin, version: _version, createdAt: _created, updatedAt: _updated, ...content } = rule;
+          const { ruleId, ruleVersionId: _from, version: _version, createdAt: _created, updatedAt: _updated, ...content } = rule;
           // PR0015 in v1 becomes PR0015-v2: the copy keeps its lineage in the id.
           return { ...content, ruleId: `${ruleId.split("-")[0]}-${dto.id}`, ruleVersionId: dto.id };
         });
@@ -145,26 +152,13 @@ export class RuleService {
     return this.rules.findById(ruleId);
   }
 
-  /** A new rule in a DRAFT version; the columns that describe its rule set are copied from it. */
+  /** A new rule in a DRAFT version of an existing rule set; it gets the next PR code. */
   async createRule(dto: CreatePaymentRuleDto): Promise<PaymentRule> {
     return this.dataSource.transaction(async (db) => {
       const version = await this.versions.findById(dto.ruleVersionId, db);
       if (version.status !== "DRAFT") throw new ConflictException(`Rule version ${version.id} is ${version.status}; rules can only be added to a DRAFT`);
-      const scope = await this.scopes.findById(dto.releaseRuleCode, db);
-      const type = await db.getRepository(ContractType).findOneByOrFail({ code: scope.contractType });
-      return this.rules.create(
-        {
-          ...dto,
-          ruleId: await nextCode(db, "payment_rules", "rule_id", "PR", 4),
-          ruleSetId: type.ruleSetId,
-          workflowTemplate: type.workflowTemplate,
-          contractType: type.code,
-          appliesToMilestoneType: scope.milestoneType,
-          parameterSource: dto.parameterSource ?? "milestones, events",
-          dataIsSynthetic: false,
-        },
-        db,
-      );
+      await this.scopes.findById(dto.releaseRuleCode, db);
+      return this.rules.create({ ...dto, ruleId: await nextCode(db, "payment_rules", "rule_id", "PR", 4) }, db);
     });
   }
 
