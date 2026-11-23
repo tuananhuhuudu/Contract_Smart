@@ -21,6 +21,14 @@ import { pageMeta, Paginated, toSkipTake } from "../utils/paging";
 /** Upper bound of findMany, so no call loads a whole large table by accident. */
 export const MAX_FIND_MANY = 1000;
 
+/**
+ * Drops the fields a client did not send. Validated DTOs keep optional fields as undefined, and
+ * spreading them over a stored row would erase its values.
+ */
+export function definedOnly<T extends object>(data: T): Partial<T> {
+  return Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined)) as Partial<T>;
+}
+
 /** Rows to match, by property name (TypeORM maps them to columns). */
 export type Where<T> = FindOptionsWhere<T>;
 
@@ -125,7 +133,7 @@ export abstract class BaseRepository<T extends ObjectLiteral, K extends keyof T 
    */
   async update(id: T[K], expectedVersion: number, data: Partial<T>, db?: EntityManager): Promise<T> {
     const where = { ...this.byId(id), version: expectedVersion } as Where<T>;
-    const { affected } = await this.repo(db).update(where, data as QueryDeepPartialEntity<T>);
+    const { affected } = await this.repo(db).update(where, definedOnly(data) as QueryDeepPartialEntity<T>);
     if (!affected) {
       await this.findById(id, db); // 404 if missing
       throw new ConflictException("VERSION_CONFLICT: the record was changed by someone else; reload and retry");

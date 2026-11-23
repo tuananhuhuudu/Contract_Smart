@@ -1,4 +1,4 @@
-// Contract Smart: the tables that exist today (group 1 of docs/thiet-ke-thu-vien-moc.dbml).
+// Contract Smart: the tables that exist today (groups 1-2 of docs/thiet-ke-thu-vien-moc.dbml).
 // Paste into https://dbdiagram.io/d to see the diagram. The full target design is in thiet-ke-thu-vien-moc.dbml.
 // Every table also has: version (optimistic lock), created_at, updated_at.
 
@@ -37,4 +37,43 @@ Table users [headercolor: #1f7a5a] {
   party_id integer [null, ref: > parties.id, note: 'NULL voi SYSTEM_ADMIN, AUDITOR']
   active boolean [not null, default: true]
   Note: 'Tai khoan dang nhap'
+}
+
+Table milestone_library [headercolor: #7a4fd1] {
+  id integer [pk, increment]
+  name text [not null, note: 'Nop bao cao']
+  active boolean [not null, default: true]
+  Note: 'Thu vien moc thanh toan, dung chung cho moi loai hop dong'
+}
+
+Table milestone_versions [headercolor: #7a4fd1] {
+  id integer [pk, increment]
+  milestone_id integer [not null, ref: > milestone_library.id]
+  is_custom boolean [not null, default: false, note: 'false = phien ban chung (hien trong thu vien); true = luat rieng, chi 1 moc cua 1 hop dong dung (tim hop dong qua milestones)']
+  version_no integer [not null, note: '1, 2, 3...']
+  status text [not null, note: 'DRAFT -> PUBLISHED -> RETIRED']
+  required_event_type_ids "integer[]" [not null, note: '{6,7}: su kien bat buoc, du moi duoc tra tien (API kiem tung id)']
+  late_penalty boolean [not null, default: false, note: 'tre han co bi phat khong (luat 60 dung)']
+  note text [null, note: 'lan sua nay doi gi']
+  published_at timestamptz [null]
+  indexes {
+    (milestone_id, version_no) [unique, note: 'chi ap dung cho phien ban chung: partial index WHERE is_custom = false']
+  }
+  Note: 'Phien ban dieu kien + luat cua mot moc. Da cong bo thi khoa. Moi moc chi 1 phien ban chung PUBLISHED. Luat rieng (is_custom) sua duoc khi hop dong DRAFT, khoa khi kich hoat.'
+}
+
+Table payment_rules [headercolor: #7a4fd1] {
+  id integer [pk, increment]
+  milestone_version_id integer [not null, ref: > milestone_versions.id]
+  priority integer [not null, note: '10, 20... nho xet truoc']
+  name text [not null, note: 'Dang tranh chap thi giu tien']
+  condition text [not null, note: 'open_dispute == TRUE; luat cuoi la ELSE. Giao dien dung o chon, may ghep chuoi.']
+  decision text [not null, note: 'RELEASE | HOLD | REJECT | PENALTY']
+  reason_code text [not null, note: '1 trong 8 ly do (CHECK): OPEN_DISPUTE | REJECTION_PRESENT | UNAUTHORIZED_EVENT | MISSING_REQUIRED_EVENT | APPROVAL_QUORUM_NOT_MET | LATE_COMPLETION | ALL_CONDITIONS_MET | UNRESOLVED_CONDITION']
+  payable_formula text [not null, default: '0']
+  penalty_formula text [not null, default: '0']
+  indexes {
+    (milestone_version_id, priority) [unique]
+  }
+  Note: 'Luat: neu ... thi ... vi ...'
 }
