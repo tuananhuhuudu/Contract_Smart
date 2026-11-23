@@ -85,6 +85,17 @@ Bên mua, nhà cung cấp, người phê duyệt của bên mua. Là **công ty 
 
 **Đăng nhập:** `POST /auth/login` trả JWT (8 giờ); mọi API khác cần `Authorization: Bearer <token>` (trên Swagger: nút **Authorize**). Mỗi lần gọi, API đọc lại người dùng từ DB, nên khóa tài khoản hay đổi vai trò có hiệu lực ngay. `POST /auth/register` tạo tài khoản **AUDITOR, không có bên** (chỉ xem) cho tới khi quản trị gán vai trò.
 
+**Phân quyền** (kiểm ở API: `@Roles` trên từng endpoint và `src/core/security/access.ts`):
+
+| Việc | Ai được làm |
+| --- | --- |
+| Xem | Mọi người đã đăng nhập. Hợp đồng, mốc, sự kiện: chỉ của **tổ chức mình** (bên mua / nhà cung cấp; người duyệt thuộc bên mua); `SYSTEM_ADMIN`, `AUDITOR` xem hết |
+| Dựng quy trình: loại sự kiện, thư viện mốc (phiên bản chung, luật), loại hợp đồng | `SYSTEM_ADMIN` |
+| Tạo hợp đồng (bên mua phải là tổ chức mình), sửa khi DRAFT, thêm / bỏ mốc, luật riêng | `CONTRACT_OWNER`, `LEGAL_REVIEWER` của bên mua |
+| Ký / kích hoạt | `CONTRACT_OWNER` của bên mua |
+| Ghi sự kiện | `SUPPLIER`, `LEGAL_REVIEWER`, `CONTRACT_OWNER`, `FINANCE_APPROVER`, `SECONDARY_APPROVER` thuộc một bên của hợp đồng; **bên ghi lấy từ người đăng nhập** (`party_id`), `recorded_by` = người đó |
+| Tự đăng ký | Tài khoản `AUDITOR` không có bên (chỉ xem) |
+
 **Tài khoản demo** (nạp bởi `pnpm db:seed`, mật khẩu `SEED_PASSWORD` trong `apps/api/.env`, để trống thì là `Passw0rd!`):
 
 | Email | Vai trò | Bên |
@@ -256,7 +267,7 @@ contracts ──< milestones ──> milestone_versions (luật chung, hoặc lu
 
 ## 7. Dữ liệu mẫu
 
-`pnpm db:seed` (trong `apps/api`) đọc `data/datapack/*.csv` của BTC và nạp lại từ đầu (xóa rồi nạp). Mã trong CSV (`B009`, `S021`...) chỉ dùng để nối dòng lúc nạp; DB giữ `id` tự sinh. Hiện nạp: **65 bên** (10 bên mua, 25 nhà cung cấp, 30 người phê duyệt) và **9 tài khoản demo**. Thư viện mốc, loại hợp đồng, hợp đồng và sự kiện **chưa nạp** dữ liệu mẫu. Quyền `DISPUTE` trong CSV được đổi thành cả Mở tranh chấp và Đóng tranh chấp.
+`pnpm db:seed` (trong `apps/api`) đọc `data/datapack/*.csv` của BTC và nạp lại từ đầu (xóa rồi nạp). Mã trong CSV (`B009`, `S021`...) chỉ dùng để nối dòng lúc nạp; DB giữ `id` tự sinh. Hiện nạp: **65 bên** (10 bên mua, 25 nhà cung cấp, 30 người phê duyệt), **9 tài khoản demo**, và **một quy trình mẫu nhỏ**: 4 mốc của loại hàng hóa (32 luật, đã công bố), loại hợp đồng "Cung cấp hàng hóa", hợp đồng CT0019 (Nova An mua của Phú Minh, ACTIVE, 14 sự kiện thật) và một hợp đồng DRAFT để thử. Quyền `DISPUTE` trong CSV được đổi thành cả Mở tranh chấp và Đóng tranh chấp.
 
 ## 8. Migration
 

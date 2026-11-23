@@ -64,8 +64,6 @@ export class UpdateContractMilestoneDto extends VersionedDto {
 export class CreateEventDto {
   @Type(() => Number) @IsInt() milestoneId!: number;
   @Type(() => Number) @IsInt() eventTypeId!: number;
-  /** Who acted; taken from the logged-in user once login exists. */
-  @Type(() => Number) @IsInt() partyId!: number;
   /** "2026-06-05T09:50:00"; now (Vietnam time) when left out. */
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/) happenedAt?: string;
   @IsOptional() @IsString() @Length(1, 100) @Transform(({ value }) => (typeof value === "string" ? value.trim() : value)) documentNo?: string;

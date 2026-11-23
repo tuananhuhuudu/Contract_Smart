@@ -81,7 +81,8 @@ export abstract class BaseRepository<T extends ObjectLiteral, K extends keyof T 
   }
 
   /** One page of rows matching `where`, sorted by a whitelisted property. */
-  async findPage(query: ListQueryDto, where: Where<T> = {}, db?: EntityManager): Promise<Paginated<T>> {
+  /** One page of rows; `where` may be a list of alternatives (OR), for example "buyer is me OR supplier is me". */
+  async findPage(query: ListQueryDto, where: Where<T> | Where<T>[] = {}, db?: EntityManager): Promise<Paginated<T>> {
     const order = { [this.sortField(query.sortBy)]: query.order } as unknown as FindOptionsOrder<T>;
     const [items, total] = await this.repo(db).findAndCount({ where, order, ...toSkipTake(query) });
     return new Paginated(items, pageMeta(query, total));

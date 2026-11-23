@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { TAG } from "../../core/api-tags";
+import { NEGOTIATORS } from "../../core/security/access";
+import { CurrentUser, Roles, type AuthUser } from "../../core/security/decorators";
 import { VersionedDto } from "../../schemas/common.schema";
 import {
   CreateMilestoneDto,
@@ -30,20 +32,23 @@ export class MilestoneLibraryController {
   }
 
   @Post()
-  @ApiOperation({ summary: "Thêm mốc (tạo sẵn phiên bản nháp v1, có thể chép luật từ mốc khác)" })
+  @Roles("SYSTEM_ADMIN")
+  @ApiOperation({ summary: "[Quản trị] Thêm mốc (tạo sẵn phiên bản nháp v1, có thể chép luật từ mốc khác)" })
   create(@Body() dto: CreateMilestoneDto) {
     return this.service.createMilestone(dto);
   }
 
   @Patch(":id")
-  @ApiOperation({ summary: "Đổi tên hoặc bật/tắt mốc (gửi kèm version)" })
+  @Roles("SYSTEM_ADMIN")
+  @ApiOperation({ summary: "[Quản trị] Đổi tên hoặc bật/tắt mốc (gửi kèm version)" })
   update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateMilestoneDto) {
     const { version, ...changes } = dto;
     return this.service.update(id, version, changes);
   }
 
   @Post(":id/versions")
-  @ApiOperation({ summary: "Tạo phiên bản nháp mới để sửa (chép từ phiên bản đang dùng)" })
+  @Roles("SYSTEM_ADMIN")
+  @ApiOperation({ summary: "[Quản trị] Tạo phiên bản nháp mới để sửa (chép từ phiên bản đang dùng)" })
   createVersion(@Param("id", ParseIntPipe) id: number) {
     return this.service.createVersion(id);
   }
@@ -56,18 +61,20 @@ export class MilestoneVersionsController {
 
   @Get(":id")
   @ApiOperation({ summary: "Một phiên bản mốc kèm các luật" })
-  get(@Param("id", ParseIntPipe) id: number) {
-    return this.service.getVersion(id);
+  get(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: AuthUser) {
+    return this.service.getVersionFor(id, user);
   }
 
   @Patch(":id")
-  @ApiOperation({ summary: "Sửa điều kiện của bản nháp: sự kiện bắt buộc, phạt trễ, ghi chú" })
-  update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateVersionDto) {
-    return this.service.updateVersion(id, dto);
+  @Roles("SYSTEM_ADMIN", ...NEGOTIATORS)
+  @ApiOperation({ summary: "[Quản trị; luật riêng: bên mua của hợp đồng] Sửa điều kiện của bản nháp: sự kiện bắt buộc, phạt trễ, ghi chú" })
+  update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateVersionDto, @CurrentUser() user: AuthUser) {
+    return this.service.updateVersion(id, dto, user);
   }
 
   @Post(":id/publish")
-  @ApiOperation({ summary: "Công bố bản nháp (kiểm tra đủ, khóa lại, phiên bản đang dùng chuyển RETIRED)" })
+  @Roles("SYSTEM_ADMIN")
+  @ApiOperation({ summary: "[Quản trị] Công bố bản nháp (kiểm tra đủ, khóa lại, phiên bản đang dùng chuyển RETIRED)" })
   publish(@Param("id", ParseIntPipe) id: number, @Body() dto: VersionedDto) {
     return this.service.publishVersion(id, dto.version);
   }
@@ -75,25 +82,26 @@ export class MilestoneVersionsController {
 
 @ApiTags(TAG.paymentRules)
 @Controller()
+@Roles("SYSTEM_ADMIN", ...NEGOTIATORS)
 export class PaymentRulesController {
   constructor(private readonly service: MilestoneLibraryService) {}
 
   @Post("milestone-versions/:id/rules")
-  @ApiOperation({ summary: "Thêm luật vào bản nháp" })
-  addRule(@Param("id", ParseIntPipe) id: number, @Body() dto: CreateRuleDto) {
-    return this.service.addRule(id, dto);
+  @ApiOperation({ summary: "[Quản trị; luật riêng: bên mua của hợp đồng] Thêm luật vào bản nháp" })
+  addRule(@Param("id", ParseIntPipe) id: number, @Body() dto: CreateRuleDto, @CurrentUser() user: AuthUser) {
+    return this.service.addRule(id, dto, user);
   }
 
   @Patch("payment-rules/:id")
-  @ApiOperation({ summary: "Sửa một luật của bản nháp (gửi kèm version)" })
-  update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateRuleDto) {
-    return this.service.updateRule(id, dto);
+  @ApiOperation({ summary: "[Quản trị; luật riêng: bên mua của hợp đồng] Sửa một luật của bản nháp (gửi kèm version)" })
+  update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateRuleDto, @CurrentUser() user: AuthUser) {
+    return this.service.updateRule(id, dto, user);
   }
 
   @Delete("payment-rules/:id")
   @HttpCode(204)
-  @ApiOperation({ summary: "Xóa một luật của bản nháp (?version=)" })
-  remove(@Param("id", ParseIntPipe) id: number, @Query() { version }: VersionedDto) {
-    return this.service.removeRule(id, version);
+  @ApiOperation({ summary: "[Quản trị; luật riêng: bên mua của hợp đồng] Xóa một luật của bản nháp (?version=)" })
+  remove(@Param("id", ParseIntPipe) id: number, @Query() { version }: VersionedDto, @CurrentUser() user: AuthUser) {
+    return this.service.removeRule(id, version, user);
   }
 }

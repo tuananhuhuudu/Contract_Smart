@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { TAG } from "../../core/api-tags";
+import { Roles } from "../../core/security/decorators";
 import { CreateEventTypeDto, EventTypeListQuery, UpdateEventTypeDto } from "../../schemas/event-type.schema";
 import { EventTypeService } from "../../services/event-type.service";
 
@@ -22,13 +23,15 @@ export class EventTypesController {
   }
 
   @Post()
-  @ApiOperation({ summary: "Thêm loại sự kiện (chứng từ phải ghi rõ bên nào được ghi; trạng thái tự suy từ nhóm)" })
+  @Roles("SYSTEM_ADMIN")
+  @ApiOperation({ summary: "[Quản trị] Thêm loại sự kiện (chứng từ phải ghi rõ bên nào được ghi; trạng thái tự suy từ nhóm)" })
   create(@Body() dto: CreateEventTypeDto) {
     return this.service.createType(dto);
   }
 
   @Patch(":id")
-  @ApiOperation({ summary: "Đổi tên hoặc bật/tắt loại sự kiện (gửi kèm version); không xóa được" })
+  @Roles("SYSTEM_ADMIN")
+  @ApiOperation({ summary: "[Quản trị] Đổi tên hoặc bật/tắt loại sự kiện (gửi kèm version); không xóa được" })
   update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateEventTypeDto) {
     const { version, ...changes } = dto;
     return this.service.update(id, version, changes);

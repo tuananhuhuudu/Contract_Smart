@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { TAG } from "../../core/api-tags";
+import { Roles } from "../../core/security/decorators";
 import { VersionedDto } from "../../schemas/common.schema";
 import {
   AddTemplateMilestoneDto,
@@ -29,13 +30,15 @@ export class ContractTypesController {
   }
 
   @Post()
-  @ApiOperation({ summary: "Thêm loại hợp đồng" })
+  @Roles("SYSTEM_ADMIN")
+  @ApiOperation({ summary: "[Quản trị] Thêm loại hợp đồng" })
   create(@Body() dto: CreateContractTypeDto) {
     return this.service.createType(dto.name);
   }
 
   @Patch(":id")
-  @ApiOperation({ summary: "Đổi tên hoặc bật/tắt loại hợp đồng (gửi kèm version)" })
+  @Roles("SYSTEM_ADMIN")
+  @ApiOperation({ summary: "[Quản trị] Đổi tên hoặc bật/tắt loại hợp đồng (gửi kèm version)" })
   update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateContractTypeDto) {
     const { version, ...changes } = dto;
     return this.service.update(id, version, changes);
@@ -44,6 +47,7 @@ export class ContractTypesController {
 
 @ApiTags(TAG.templateMilestones)
 @Controller()
+@Roles("SYSTEM_ADMIN")
 export class ContractTypeMilestonesController {
   constructor(private readonly service: ContractTypeService) {}
 

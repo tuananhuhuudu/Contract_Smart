@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Contract Smart</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --line:#dde1e7; --text:#1c2430; --muted:#5d6878; --accent:#2f6fb3; --ok:#1f7a5a; --err:#b3261e; --warn:#9a6700; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); }
+  header { background:var(--card); border-bottom:1px solid var(--line); padding:10px 20px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:17px; margin:0; }
+  nav { display:flex; gap:6px; flex-wrap:wrap; }
+  nav button { font:inherit; border:1px solid var(--line); background:#fff; border-radius:16px; padding:4px 14px; color:var(--muted); cursor:pointer; }
+  nav button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .who { margin-left:auto; font-size:13px; color:var(--muted); }
+  main { padding:16px 20px; max-width:1500px; margin:auto; }
+  .split { display:grid; grid-template-columns:320px minmax(0, 1fr); gap:14px; }
+  @media (max-width:900px) { .split { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin-bottom:14px; }
+  .card h2 { font-size:16px; margin:0 0 6px; } .card h3 { font-size:14px; margin:16px 0 8px; }
+  .hint { color:var(--muted); font-size:13px; margin:0 0 10px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  th { background:#f1f3f6; font-weight:600; white-space:nowrap; }
+  td input, td select { width:100%; padding:4px 6px; }
+  .scroll { overflow-x:auto; }
+  .list { display:flex; flex-direction:column; gap:6px; max-height:65vh; overflow:auto; }
+  .item { border:1px solid var(--line); border-radius:6px; padding:8px 10px; cursor:pointer; background:#fff; }
+  .item:hover { background:#f3f7fc; } .item.sel { border-color:var(--accent); background:#e8f0fa; }
+  .item b { display:block; font-size:13px; } .item small { color:var(--muted); font-size:12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:10px 14px; align-items:end; }
+  label { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--muted); }
+  input, select { font:inherit; font-size:13px; padding:6px 8px; border:1px solid #c5ccd6; border-radius:6px; background:#fff; color:var(--text); }
+  input:disabled, select:disabled { background:#f3f4f6; color:var(--muted); }
+  .checks { display:flex; flex-wrap:wrap; gap:4px 14px; }
+  .checks label { flex-direction:row; align-items:center; gap:4px; color:var(--text); font-size:13px; }
+  button.btn { font:inherit; padding:7px 14px; border-radius:6px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; }
+  button.btn.sec { background:#fff; color:var(--accent); } button.btn.small { padding:2px 8px; font-size:12px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .tag { display:inline-block; padding:1px 7px; border-radius:10px; font-size:12px; background:#eef1f5; }
+  .tag.PUBLISHED, .tag.ACTIVE, .tag.CONFIRMED, .tag.APPROVED, .tag.RESOLVED { background:#e3f3ec; color:var(--ok); }
+  .tag.DRAFT, .tag.OPEN { background:#fdf3dc; color:var(--warn); } .tag.REJECTED, .tag.CLOSED { background:#fbe7e6; color:var(--err); }
+  .vtabs { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 10px; }
+  .vtabs button { font:inherit; font-size:12px; border:1px solid var(--line); background:#fff; border-radius:6px; padding:3px 10px; cursor:pointer; }
+  .vtabs button.on { border-color:var(--accent); background:#e8f0fa; }
+  .cond .clause { display:flex; gap:4px; align-items:center; margin-bottom:4px; flex-wrap:wrap; }
+  .cond .clause select, .cond .clause input { width:auto; min-width:0; }
+  .cond .clause .and { font-size:11px; font-weight:600; color:var(--muted); width:28px; }
+  .cond .sentence { font-size:12px; color:var(--ok); margin-top:2px; }
+  .cond .tools { display:flex; gap:10px; align-items:center; font-size:12px; margin-top:2px; }
+  .cond .tools label { flex-direction:row; align-items:center; gap:4px; color:var(--text); font-size:12px; }
+  .msg { padding:8px 12px; border-radius:6px; margin:10px 0; font-size:13px; }
+  .msg.ok { background:#e3f3ec; color:var(--ok); } .msg.bad { background:#fbe7e6; color:var(--err); }
+  .total { font-weight:600; } .total.ok { color:var(--ok); } .total.bad { color:var(--err); }
+  #toast { position:fixed; right:16px; bottom:16px; max-width:460px; z-index:9; }
+  .login { max-width:460px; margin:60px auto; }
+  .accounts { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:10px; }
+  .accounts button { font:inherit; font-size:12px; text-align:left; border:1px solid var(--line); background:#fff; border-radius:6px; padding:6px 8px; cursor:pointer; }
+  .accounts button:hover { background:#f3f7fc; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Contract Smart</h1>
+  <nav id="tabs" hidden>
+    <button data-tab="lib" class="on">1. Thư viện mốc</button>
+    <button data-tab="types">2. Loại hợp đồng</button>
+    <button data-tab="contracts">3. Hợp đồng &amp; sự kiện</button>
+  </nav>
+  <span class="who" id="who"></span>
+</header>
+
+<main>
+  <!-- Login -->
+  <section id="loginPage" class="card login" hidden>
+    <h2>Đăng nhập</h2>
+    <div class="grid" style="grid-template-columns:1fr">
+      <label>Email<input id="lgEmail" value="admin@contract-smart.vn"></label>
+      <label>Mật khẩu<input id="lgPass" type="password" value="Passw0rd!"></label>
+      <button class="btn" id="lgBtn">Đăng nhập</button>
+    </div>
+    <div id="lgMsg"></div>
+    <p class="hint" style="margin-top:12px">Tài khoản demo (mật khẩu Passw0rd!), bấm để điền:</p>
+    <div class="accounts" id="accounts"></div>
+  </section>
+
+  <!-- 1. Library -->
+  <section data-page="lib" hidden>
+    <div class="split">
+      <div class="card">
+        <h2>Thư viện mốc</h2>
+        <div class="grid" style="grid-template-columns:1fr">
+          <label>Tên mốc mới<input id="libName" placeholder="Ví dụ Giao hàng"></label>
+          <label>Chép luật từ (tùy chọn)<select id="libCopy"></select></label>
+          <button class="btn small" id="libAdd">+ Thêm mốc</button>
+        </div>
+        <div class="list" id="libList" style="margin-top:10px"></div>
+      </div>
+      <div class="card" id="libDetail"><p class="hint">Chọn một mốc bên trái.</p></div>
+    </div>
+  </section>
+
+  <!-- 2. Contract types -->
+  <section data-page="types" hidden>
+    <div class="split">
+      <div class="card">
+        <h2>Loại hợp đồng</h2>
+        <div class="row"><input id="typeName" placeholder="Ví dụ Cung cấp hàng hóa" style="flex:1"><button class="btn small" id="typeAdd">+ Thêm</button></div>
+        <div class="list" id="typeList" style="margin-top:10px"></div>
+      </div>
+      <div class="card" id="typeDetail"><p class="hint">Chọn một loại hợp đồng bên trái.</p></div>
+    </div>
+  </section>
+
+  <!-- 3. Contracts -->
+  <section data-page="contracts" hidden>
+    <div class="split">
+      <div class="card">
+        <h2>Hợp đồng</h2>
+        <button class="btn small" id="ctNewBtn">+ Tạo hợp đồng</button>
+        <div class="list" id="ctList" style="margin-top:10px"></div>
+      </div>
+      <div class="card" id="ctDetail"><p class="hint">Chọn một hợp đồng bên trái, hoặc tạo mới.</p></div>
+    </div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script src="rule-builder.js"></script>
+<script>
+const API = "/api/v1";
+const $ = (s) => document.querySelector(s);
+const tag = (v) => `<span class="tag ${esc(v)}">${esc(v)}</span>`;
+const S = { user: null, eventTypes: [], parties: [], selLib: null, selVersion: null, selType: null, selContract: null, selMs: null, backTo: null };
+
+// ---------------- API ----------------
+// The token stays in this browser only (development tool); every call sends it.
+let TOKEN = null;
+try { TOKEN = localStorage.getItem("cs_token"); } catch { /* storage blocked: log in each time */ }
+async function api(method, path, body) {
+  const res = await fetch(API + path, {
+    method, body: body === undefined ? undefined : JSON.stringify(body),
+    headers: { ...(body === undefined ? {} : { "content-type": "application/json" }), ...(TOKEN ? { authorization: "Bearer " + TOKEN } : {}) },
+  });
+  const text = await res.text();
+  const json = text ? JSON.parse(text) : null;
+  if (res.status === 401 && path !== "/auth/login") { logout(); throw new Error("Phiên đăng nhập hết hạn, đăng nhập lại."); }
+  if (!res.ok) throw new Error(json?.message ?? res.statusText);
+  return json;
+}
+const data = async (method, path, body) => (await api(method, path, body))?.data;
+function toast(kind, text) {
+  $("#toast").innerHTML = `<div class="msg ${kind}" style="box-shadow:0 2px 10px rgba(0,0,0,.15)">${esc(text)}</div>`;
+  clearTimeout(toast.t); toast.t = setTimeout(() => ($("#toast").innerHTML = ""), kind === "bad" ? 7000 : 3500);
+}
+/** Runs an action and shows its error instead of failing silently. */
+const run = (fn) => async (...args) => { try { await fn(...args); } catch (e) { toast("bad", e.message); } };
+
+// ---------------- Login ----------------
+const DEMO = [
+  ["admin@contract-smart.vn", "Quản trị hệ thống"], ["auditor@contract-smart.vn", "Kiểm toán (chỉ xem)"],
+  ["legal@novaan.vn", "Nova An: pháp lý"], ["owner@novaan.vn", "Nova An: chủ hợp đồng"],
+  ["finance@novaan.vn", "Nova An: duyệt tài chính"], ["secondary@novaan.vn", "Nova An: duyệt thứ hai"],
+  ["controller@novaan.vn", "Nova An: kiểm soát"], ["supplier@phuminh.vn", "Phú Minh: nhà cung cấp"],
+];
+$("#accounts").innerHTML = DEMO.map(([e, n]) => `<button data-e="${e}"><b>${esc(n)}</b><br><small>${esc(e)}</small></button>`).join("");
+$("#accounts").querySelectorAll("button").forEach((b) => b.onclick = () => { $("#lgEmail").value = b.dataset.e; $("#lgPass").value = "Passw0rd!"; });
+$("#lgBtn").onclick = async () => {
+  try {
+    const r = await data("POST", "/auth/login", { email: $("#lgEmail").value, password: $("#lgPass").value });
+    TOKEN = r.accessToken; try { localStorage.setItem("cs_token", TOKEN); } catch { /* ignore */ }
+    await start();
+  } catch (e) { $("#lgMsg").innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+};
+function logout() {
+  TOKEN = null; try { localStorage.removeItem("cs_token"); } catch { /* ignore */ }
+  $("#tabs").hidden = true; $("#who").innerHTML = ""; document.querySelectorAll("[data-page]").forEach((p) => p.hidden = true);
+  $("#loginPage").hidden = false;
+}
+
+// ---------------- Tabs ----------------
+function showTab(name) {
+  document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x.dataset.tab === name));
+  document.querySelectorAll("[data-page]").forEach((s) => s.hidden = s.dataset.page !== name);
+  ({ lib: loadLib, types: loadTypes, contracts: loadContracts })[name]();
+}
+document.querySelectorAll("#tabs button").forEach((b) => b.onclick = run(() => showTab(b.dataset.tab)));
+
+const NEGOTIATORS = ["CONTRACT_OWNER", "LEGAL_REVIEWER"];
+const RECORDERS = ["SUPPLIER", "LEGAL_REVIEWER", "CONTRACT_OWNER", "FINANCE_APPROVER", "SECONDARY_APPROVER"];
+const isAdmin = () => S.user?.role === "SYSTEM_ADMIN";
+const negotiatesFor = (c) => NEGOTIATORS.includes(S.user?.role) && S.org === c.buyerId;
+const evName = (id) => S.eventTypes.find((t) => t.id === id)?.name ?? `#${id}`;
+const partyName = (id) => S.parties.find((p) => p.id === id)?.name ?? `#${id}`;
+const money = (v) => Number(v).toLocaleString("vi-VN", { maximumFractionDigits: 2 });
+
+// ================= 1. Milestone library =================
+async function loadLib() {
+  const list = await data("GET", "/milestone-library?pageSize=100&sortBy=id&order=asc");
+  $("#libList").innerHTML = list.map((m) => `<div class="item ${m.id === S.selLib ? "sel" : ""}" data-id="${m.id}"><b>${esc(m.name)}</b><small>id ${m.id}${m.active ? "" : " · đã tắt"}</small></div>`).join("") || `<p class="hint">Chưa có mốc nào.</p>`;
+  $("#libList").querySelectorAll(".item").forEach((el) => el.onclick = run(async () => { S.selLib = +el.dataset.id; S.selVersion = null; S.backTo = null; await loadLib(); }));
+  $("#libName").closest(".grid").hidden = !isAdmin();
+  $("#libCopy").innerHTML = `<option value="">— không, bắt đầu trống —</option>` + list.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join("");
+  if (S.selLib) await renderLib();
+}
+$("#libAdd").onclick = run(async () => {
+  const body = { name: $("#libName").value };
+  if ($("#libCopy").value) body.copyFromMilestoneId = +$("#libCopy").value;
+  const m = await data("POST", "/milestone-library", body);
+  S.selLib = m.id; S.selVersion = m.versions[0].id; $("#libName").value = "";
+  toast("ok", `Đã thêm mốc "${m.name}" kèm bản nháp v1.`); await loadLib();
+});
+
+async function renderLib() {
+  const m = await data("GET", `/milestone-library/${S.selLib}`);
+  const custom = S.selVersion && !m.versions.some((v) => v.id === S.selVersion);
+  const vid = S.selVersion ?? (m.versions.find((v) => v.status === "DRAFT") ?? m.versions.find((v) => v.status === "PUBLISHED") ?? m.versions.at(-1))?.id;
+  const v = vid ? await data("GET", `/milestone-versions/${vid}`) : null;
+  const editable = v?.status === "DRAFT" && (custom ? NEGOTIATORS.includes(S.user.role) : isAdmin()), dis = editable ? "" : "disabled";
+  const evidence = S.eventTypes.filter((t) => t.category === "EVIDENCE" && t.active);
+  $("#libDetail").innerHTML = `
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">${esc(m.name)}</h2><span class="hint">milestone_library.id = ${m.id}</span></div>
+    <div class="vtabs">${m.versions.map((x) => `<button data-v="${x.id}" class="${x.id === v?.id ? "on" : ""}">v${x.versionNo} ${tag(x.status)}</button>`).join("")}
+      ${custom ? `<button class="on">Luật riêng của hợp đồng ${tag(v.status)}</button>` : ""}
+      ${isAdmin() && !custom && !m.versions.some((x) => x.status === "DRAFT") ? `<button id="newVer">+ Tạo phiên bản mới để sửa</button>` : ""}</div>
+    ${!v ? "" : `
+    <p class="hint">${custom ? "Luật riêng của một hợp đồng: bên mua sửa được khi hợp đồng còn DRAFT, khóa khi kích hoạt." : !isAdmin() ? "Chỉ quản trị hệ thống sửa được thư viện mốc; bạn đang xem." : editable ? "Bản nháp: sửa xong thì Công bố." : "Đã công bố / ngừng dùng nên bị khóa. Muốn sửa thì tạo phiên bản mới."}</p>
+    <div class="grid">
+      <label>Phạt trễ hạn<select id="vPen" ${dis}><option value="false">Không</option><option value="true" ${v.latePenalty ? "selected" : ""}>Có</option></select></label>
+      <label style="grid-column:span 2">Ghi chú lần sửa<input id="vNote" value="${esc(v.note ?? "")}" ${dis}></label>
+      <label style="grid-column:1/-1">Sự kiện bắt buộc
+        <div class="checks">${evidence.map((t) => `<label><input type="checkbox" value="${t.id}" ${v.requiredEventTypeIds.includes(t.id) ? "checked" : ""} ${dis}>${esc(t.name)}</label>`).join("")}</div></label>
+    </div>
+    <div class="row" style="justify-content:space-between; margin-top:14px"><h3 style="margin:0">Luật (xét từ ưu tiên nhỏ đến lớn, luật cuối là ELSE)</h3>
+      ${editable ? `<button class="btn sec small" id="addRule">+ Thêm luật</button>` : ""}</div>
+    <div class="scroll"><table id="rules"><tr><th>Ưu tiên</th><th>Tên luật</th><th>Nếu</th><th>Thì</th><th>Lý do</th><th>Tiền trả</th><th>Tiền phạt</th>${editable ? "<th></th>" : ""}</tr>
+      ${v.rules.map((r) => `<tr data-id="${r.id}"><td style="width:70px"><input data-f="priority" type="number" value="${r.priority}" ${dis}></td>
+        <td style="min-width:200px"><input data-f="name" value="${esc(r.name)}" ${dis}></td>
+        <td style="min-width:440px">${condEditor(r, dis)}</td>
+        <td><select data-f="decision" ${dis}>${["RELEASE", "HOLD", "REJECT", "PENALTY"].map((x) => `<option value="${x}" ${x === r.decision ? "selected" : ""}>${DECISION_VI[x]}</option>`).join("")}</select></td>
+        <td style="min-width:170px"><select data-f="reasonCode" ${dis}>${REASONS.map((x) => `<option value="${x[0]}" ${x[0] === r.reasonCode ? "selected" : ""}>${esc(x[1])} → ${esc(x[2])}</option>`).join("")}</select></td>
+        <td><input data-f="payableFormula" value="${esc(r.payableFormula)}" ${dis}></td><td><input data-f="penaltyFormula" value="${esc(r.penaltyFormula)}" ${dis}></td>
+        ${editable ? `<td><button class="btn sec small" data-rm="${r.id}" data-v="${r.version}">Xóa</button></td>` : ""}</tr>`).join("") || `<tr><td colspan="8" class="hint">Chưa có luật.</td></tr>`}
+    </table></div>
+    <div class="row" style="justify-content:flex-end; margin-top:12px">
+      ${S.backTo ? `<button class="btn sec" id="back">‹ Quay lại hợp đồng</button>` : ""}
+      ${editable && !custom ? `<button class="btn" id="publish">Công bố v${v.versionNo}</button>` : ""}</div>`}`;
+
+  $("#libDetail").querySelectorAll(".vtabs [data-v]").forEach((b) => b.onclick = run(async () => { S.selVersion = +b.dataset.v; await renderLib(); }));
+  if ($("#newVer")) $("#newVer").onclick = run(async () => { const nv = await data("POST", `/milestone-library/${m.id}/versions`); S.selVersion = nv.id; toast("ok", `Đã tạo bản nháp v${nv.versionNo}.`); await renderLib(); });
+  if ($("#back")) $("#back").onclick = run(async () => { S.selContract = S.backTo; S.backTo = null; showTab("contracts"); });
+  if (!v || !editable) return;
+  const patchVersion = async (changes) => { await data("PATCH", `/milestone-versions/${v.id}`, { version: v.version, ...changes }); await renderLib(); };
+  $("#vPen").onchange = run((e) => patchVersion({ latePenalty: e.target.value === "true" }));
+  $("#vNote").onchange = run((e) => patchVersion({ note: e.target.value }));
+  $("#libDetail").querySelectorAll(".checks input").forEach((c) => c.onchange = run(() =>
+    patchVersion({ requiredEventTypeIds: [...$("#libDetail").querySelectorAll(".checks input:checked")].map((x) => +x.value) })));
+  const ruleOf = (el) => v.rules.find((r) => r.id === +el.closest("tr").dataset.id);
+  $("#rules").querySelectorAll("tr[data-id] [data-f]").forEach((el) => el.onchange = run(async () => {
+    const r = ruleOf(el), f = el.dataset.f;
+    await data("PATCH", `/payment-rules/${r.id}`, { version: r.version, [f]: f === "priority" ? +el.value : el.value }); await renderLib();
+  }));
+  $("#rules").querySelectorAll("[data-c]").forEach((el) => {
+    const handler = run(async () => {
+      const tr = el.closest("tr"), r = ruleOf(el), k = Number(el.closest(".clause")?.dataset.k);
+      let condition;
+      if (el.dataset.c === "else" && !el.checked) condition = "open_dispute == TRUE";
+      else if (el.dataset.c === "v") { el.closest(".clause").querySelectorAll('[data-c="kind"],[data-c="num"],[data-c="val"]').forEach((x) => x.remove()); condition = readCondition(tr); }
+      else condition = readCondition(tr, el.dataset.c, k);
+      await data("PATCH", `/payment-rules/${r.id}`, { version: r.version, condition }); await renderLib();
+    });
+    if (el.tagName === "BUTTON") el.onclick = handler; else el.onchange = handler;
+  });
+  $("#rules").querySelectorAll("[data-rm]").forEach((b) => b.onclick = run(async () => { await api("DELETE", `/payment-rules/${b.dataset.rm}?version=${b.dataset.v}`); await renderLib(); }));
+  // The first rule is the ELSE at priority 80; later rules take the first free slot before the last rule.
+  $("#addRule").onclick = run(async () => {
+    if (!v.rules.length) {
+      await data("POST", `/milestone-versions/${v.id}/rules`, { priority: 80, name: "Còn lại: giữ tiền để kiểm tra", condition: "ELSE", decision: "HOLD", reasonCode: "UNRESOLVED_CONDITION" });
+      return renderLib();
+    }
+    const last = v.rules.at(-1).priority, used = new Set(v.rules.map((r) => r.priority));
+    let p = 10; while (used.has(p)) p += 10;
+    if (p >= last) throw new Error(`Không còn chỗ trước luật cuối (ưu tiên ${last}); sửa ưu tiên của luật cuối lớn hơn rồi thêm lại.`);
+    await data("POST", `/milestone-versions/${v.id}/rules`, { priority: p, name: "Luật mới", condition: "days_late_after_grace > 10", decision: "HOLD", reasonCode: "LATE_COMPLETION" });
+    await renderLib();
+  });
+  if ($("#publish")) $("#publish").onclick = run(async () => { await data("POST", `/milestone-versions/${v.id}/publish`, { version: v.version }); toast("ok", "Đã công bố. Phiên bản cũ (nếu có) chuyển RETIRED."); S.selVersion = null; await loadLib(); });
+}
+
+// ================= 2. Contract types =================
+async function loadTypes() {
+  const list = await data("GET", "/contract-types?pageSize=100&sortBy=id&order=asc");
+  $("#typeName").closest(".row").hidden = !isAdmin();
+  $("#typeList").innerHTML = list.map((t) => `<div class="item ${t.id === S.selType ? "sel" : ""}" data-id="${t.id}"><b>${esc(t.name)}</b><small>id ${t.id}</small></div>`).join("") || `<p class="hint">Chưa có loại nào.</p>`;
+  $("#typeList").querySelectorAll(".item").forEach((el) => el.onclick = run(async () => { S.selType = +el.dataset.id; await loadTypes(); }));
+  if (S.selType) await renderType();
+}
+$("#typeAdd").onclick = run(async () => { const t = await data("POST", "/contract-types", { name: $("#typeName").value }); S.selType = t.id; $("#typeName").value = ""; await loadTypes(); });
+
+async function renderType() {
+  const t = await data("GET", `/contract-types/${S.selType}`);
+  const lib = await data("GET", "/milestone-library?pageSize=100&active=true&sortBy=id&order=asc");
+  const usable = lib.filter((m) => !t.milestones.some((r) => r.milestoneId === m.id));
+  $("#typeDetail").innerHTML = `
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">${esc(t.name)}</h2><span class="hint">contract_types.id = ${t.id}</span></div>
+    <div class="scroll" style="margin-top:10px"><table id="tRows"><tr><th>#</th><th>Mốc</th><th>Luật đang dùng</th><th style="width:100px">%</th><th style="width:120px">Hạn (+ngày)</th><th></th></tr>
+      ${t.milestones.map((r) => `<tr data-id="${r.id}" data-v="${r.version}"><td>${r.position}</td><td>${esc(r.milestoneName)}</td><td>${r.publishedVersionNo ? "v" + r.publishedVersionNo : "chưa công bố"}</td>
+        <td><input data-f="paymentPercent" value="${r.paymentPercent}" ${isAdmin() ? "" : "disabled"}></td><td><input data-f="dueAfterDays" type="number" value="${r.dueAfterDays}" ${isAdmin() ? "" : "disabled"}></td>
+        <td>${isAdmin() ? `<button class="btn sec small" data-rm="${r.id}" data-v="${r.version}">Bỏ</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="6" class="hint">Chưa có mốc.</td></tr>`}</table></div>
+    <p>Tổng: <span class="total ${t.complete ? "ok" : "bad"}">${t.totalPercent}%${t.complete ? " ✓ đủ để tạo hợp đồng" : " (phải đủ 100%)"}</span></p>
+    ${!isAdmin() ? `<p class="hint">Chỉ quản trị hệ thống sửa được loại hợp đồng; bạn đang xem.</p>` : `<h3>Ghép mốc từ thư viện</h3>
+    <div class="grid">
+      <label>Mốc (phải đã công bố)<select id="tdLib">${usable.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join("")}</select></label>
+      <label>% thanh toán<input id="tdPct" value="${Math.max(0, 100 - Number(t.totalPercent)).toFixed(2)}"></label>
+      <label>Hạn = ngày bắt đầu + số ngày<input id="tdDays" type="number" value="0"></label>
+      <button class="btn" id="tdAdd">+ Ghép</button>
+    </div>`}`;
+  $("#tRows").querySelectorAll("tr[data-id] [data-f]").forEach((el) => el.onchange = run(async () => {
+    const tr = el.closest("tr");
+    await data("PATCH", `/contract-type-milestones/${tr.dataset.id}`, { version: +tr.dataset.v, [el.dataset.f]: el.dataset.f === "dueAfterDays" ? +el.value : el.value }); await renderType();
+  }));
+  $("#tRows").querySelectorAll("[data-rm]").forEach((b) => b.onclick = run(async () => { await api("DELETE", `/contract-type-milestones/${b.dataset.rm}?version=${b.dataset.v}`); await renderType(); }));
+  if ($("#tdAdd")) $("#tdAdd").onclick = run(async () => {
+    await data("POST", `/contract-types/${t.id}/milestones`, { milestoneId: +$("#tdLib").value, paymentPercent: $("#tdPct").value, dueAfterDays: +$("#tdDays").value }); await renderType();
+  });
+}
+
+// ================= 3. Contracts and events =================
+async function loadContracts() {
+  const list = await data("GET", "/contracts?pageSize=100&sortBy=id&order=desc");
+  $("#ctNewBtn").hidden = !NEGOTIATORS.includes(S.user.role);
+  $("#ctList").innerHTML = list.map((c) => `<div class="item ${c.id === S.selContract ? "sel" : ""}" data-id="${c.id}"><b>#${c.id} ${esc(c.title)} ${tag(c.status)}</b>
+    <small>${esc(partyName(c.buyerId))} → ${esc(partyName(c.supplierId))} · ${money(c.valueVndMn)} tr</small></div>`).join("") || `<p class="hint">Chưa có hợp đồng.</p>`;
+  $("#ctList").querySelectorAll(".item").forEach((el) => el.onclick = run(async () => { S.selContract = +el.dataset.id; S.selMs = null; await loadContracts(); }));
+  if (S.selContract) await renderContract();
+}
+$("#ctNewBtn").onclick = run(async () => {
+  S.selContract = null;
+  const types = await data("GET", "/contract-types?pageSize=100&active=true");
+  const opt = (type) => S.parties.filter((p) => p.type === type && p.active).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+  const localDate = (d) => d.toLocaleDateString("sv-SE"); // YYYY-MM-DD in the computer's time zone
+  const today = localDate(new Date());
+  $("#ctDetail").innerHTML = `<h2>Tạo hợp đồng</h2><p class="hint">Các mốc được sinh từ khuôn của loại hợp đồng (khuôn phải đủ 100%). Hợp đồng mới ở DRAFT.</p>
+    <div class="grid">
+      <label>Tên<input id="nTitle" value="Hợp đồng thử"></label>
+      <label>Loại hợp đồng<select id="nType">${types.map((t) => `<option value="${t.id}">${esc(t.name)}</option>`).join("")}</select></label>
+      <label>Bên mua<select id="nBuyer">${opt("BUYER")}</select></label>
+      <label>Nhà cung cấp<select id="nSupplier">${opt("SUPPLIER")}</select></label>
+      <label>Giá trị (triệu VND)<input id="nValue" value="1000"></label>
+      <label>Ngày bắt đầu<input id="nStart" type="date" value="${today}"></label>
+      <label>Ngày kết thúc<input id="nEnd" type="date" value="${localDate(new Date(Date.now() + 180 * 864e5))}"></label>
+      <label>Chính sách duyệt<select id="nPolicy"><option>SINGLE_BUYER_APPROVAL</option><option>DUAL_APPROVAL</option><option>FINANCE_PLUS_OWNER</option><option>AUTO_IF_ALL_CONDITIONS</option></select></label>
+      <label>Ân hạn (ngày)<input id="nGrace" type="number" value="3"></label>
+      <label>Phạt %/ngày<input id="nRate" value="0.1"></label>
+      <label>Trần phạt %<input id="nMax" value="8"></label>
+      <button class="btn" id="nCreate">Tạo</button>
+    </div>`;
+  const nb = S.parties.find((p) => p.name.startsWith("Nova An")), ns = S.parties.find((p) => p.name.startsWith("Phú Minh"));
+  if (nb) $("#nBuyer").value = nb.id; if (ns) $("#nSupplier").value = ns.id;
+  $("#nCreate").onclick = run(async () => {
+    const c = await data("POST", "/contracts", { title: $("#nTitle").value, contractTypeId: +$("#nType").value, buyerId: +$("#nBuyer").value, supplierId: +$("#nSupplier").value,
+      valueVndMn: $("#nValue").value, startOn: $("#nStart").value, endOn: $("#nEnd").value, approvalPolicy: $("#nPolicy").value,
+      graceDays: +$("#nGrace").value, penaltyPctPerDay: $("#nRate").value, maxPenaltyPct: $("#nMax").value });
+    S.selContract = c.id; toast("ok", `Đã tạo hợp đồng #${c.id} (DRAFT).`); await loadContracts();
+  });
+});
+
+async function renderContract() {
+  const c = await data("GET", `/contracts/${S.selContract}`);
+  const draft = c.status === "DRAFT" && negotiatesFor(c), active = c.status === "ACTIVE";
+  const canActivate = c.status === "DRAFT" && S.user.role === "CONTRACT_OWNER" && S.org === c.buyerId;
+  const lib = draft ? await data("GET", "/milestone-library?pageSize=100&active=true") : [];
+  $("#ctDetail").innerHTML = `
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">#${c.id} ${esc(c.title)} ${tag(c.status)}</h2>
+      ${canActivate ? `<button class="btn" id="activate">Ký / kích hoạt</button>` : ""}</div>
+    <p class="hint">${esc(partyName(c.buyerId))} → ${esc(partyName(c.supplierId))} · ${money(c.valueVndMn)} triệu · ${c.startOn} → ${c.endOn} · ${esc(c.approvalPolicy)} · ân hạn ${c.graceDays} ngày, phạt ${Number(c.penaltyPctPerDay)}%/ngày, trần ${Number(c.maxPenaltyPct)}%</p>
+    <p class="hint">${draft ? "DRAFT: sửa được %, hạn, thêm / bỏ mốc, luật riêng cho từng mốc." : c.status === "DRAFT" ? "DRAFT: chỉ chủ hợp đồng / pháp lý của bên mua sửa được; bạn đang xem." : active ? "ACTIVE: đã khóa; bấm \"Sự kiện\" ở một mốc để xem và ghi." : ""}${c.status === "DRAFT" && !canActivate ? " Chỉ chủ hợp đồng của bên mua ký / kích hoạt được." : ""}</p>
+    <div class="scroll"><table id="ms"><tr><th>#</th><th>Mốc</th><th style="width:90px">%</th><th style="width:150px">Hạn</th><th>Tiền (tr)</th><th>Luật</th><th>Sự kiện bắt buộc</th><th></th></tr>
+      ${c.milestones.map((m) => `<tr data-id="${m.id}" data-v="${m.version}"><td>${m.position}</td><td>${esc(m.name)}</td>
+        <td>${draft ? `<input data-f="paymentPercent" value="${m.paymentPercent}">` : m.paymentPercent}</td>
+        <td>${draft ? `<input data-f="dueOn" type="date" value="${m.dueOn}">` : m.dueOn}</td><td>${money(m.amountVndMn)}</td>
+        <td>${m.isCustom ? `<b>riêng</b> ${tag(m.versionStatus)}` : `v${m.versionNo} chung`} · ${m.ruleCount} luật</td>
+        <td>${esc(m.requiredEventTypeIds.map(evName).join(", "))}</td>
+        <td style="white-space:nowrap">${draft ? (m.isCustom
+          ? `<button class="btn sec small" data-edit="${m.milestoneVersionId}" data-lib="${m.milestoneId}">Sửa luật riêng</button> <button class="btn sec small" data-shared="${m.id}">Về luật chung</button>`
+          : `<button class="btn sec small" data-own="${m.id}">Dùng luật riêng</button>`) + ` <button class="btn sec small" data-drop="${m.id}" data-v="${m.version}">Bỏ</button>`
+          : active ? `<button class="btn ${S.selMs === m.id ? "" : "sec"} small" data-evs="${m.id}">Sự kiện</button>` : ""}</td></tr>`).join("")}</table></div>
+    <p>Tổng tiền: <span class="total ${c.complete ? "ok" : "bad"}">${money(c.totalAmountVndMn)} / ${money(c.valueVndMn)} triệu${c.complete ? " ✓" : " (phải bằng giá trị mới kích hoạt được)"}</span></p>
+    ${draft ? `<div class="row"><select id="aLib">${lib.filter((x) => !c.milestones.some((m) => m.milestoneId === x.id)).map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select>
+      <label style="flex-direction:row;align-items:center;gap:4px">% <input id="aPct" style="width:80px" value="10"></label>
+      <label style="flex-direction:row;align-items:center;gap:4px">hạn <input id="aDue" type="date" value="${c.endOn}"></label>
+      <button class="btn sec small" id="aAdd">+ Thêm mốc cho riêng hợp đồng này</button></div>` : ""}
+    <div id="evPanel"></div>`;
+
+  const msRow = (el) => el.closest("tr");
+  $("#ms").querySelectorAll("tr[data-id] [data-f]").forEach((el) => el.onchange = run(async () => {
+    const tr = msRow(el); await data("PATCH", `/milestones/${tr.dataset.id}`, { version: +tr.dataset.v, [el.dataset.f]: el.value }); await renderContract();
+  }));
+  $("#ms").querySelectorAll("[data-own]").forEach((b) => b.onclick = run(async () => {
+    const c2 = await data("POST", `/milestones/${b.dataset.own}/custom-rules`); const m = c2.milestones.find((x) => x.id === +b.dataset.own);
+    S.backTo = c.id; S.selLib = m.milestoneId; S.selVersion = m.milestoneVersionId; showTab("lib");
+  }));
+  $("#ms").querySelectorAll("[data-edit]").forEach((b) => b.onclick = run(async () => { S.backTo = c.id; S.selLib = +b.dataset.lib; S.selVersion = +b.dataset.edit; showTab("lib"); }));
+  $("#ms").querySelectorAll("[data-shared]").forEach((b) => b.onclick = run(async () => { await data("DELETE", `/milestones/${b.dataset.shared}/custom-rules`); await renderContract(); }));
+  $("#ms").querySelectorAll("[data-drop]").forEach((b) => b.onclick = run(async () => { await api("DELETE", `/milestones/${b.dataset.drop}?version=${b.dataset.v}`); await renderContract(); }));
+  $("#ms").querySelectorAll("[data-evs]").forEach((b) => b.onclick = run(async () => { S.selMs = S.selMs === +b.dataset.evs ? null : +b.dataset.evs; await renderContract(); }));
+  if ($("#aAdd")) $("#aAdd").onclick = run(async () => { await data("POST", `/contracts/${c.id}/milestones`, { milestoneId: +$("#aLib").value, paymentPercent: $("#aPct").value, dueOn: $("#aDue").value }); await renderContract(); });
+  if ($("#activate")) $("#activate").onclick = run(async () => { await data("POST", `/contracts/${c.id}/activate`, { version: c.version }); toast("ok", "Đã kích hoạt: hợp đồng và luật riêng bị khóa."); await loadContracts(); });
+  if (active && S.selMs) await renderEvents(c, c.milestones.find((m) => m.id === S.selMs));
+}
+
+const CAT_VI = { EVIDENCE: "Chứng từ", APPROVAL: "Phê duyệt", REJECTION: "Từ chối", DISPUTE_OPEN: "Mở tranh chấp", DISPUTE_RESOLVE: "Đóng tranh chấp", OTHER: "Khác" };
+async function renderEvents(c, m) {
+  const events = await data("GET", `/milestones/${m.id}/events`);
+  const closed = new Set(events.map((e) => e.resolvesEventId).filter(Boolean));
+  const open = events.filter((e) => e.eventType.category === "DISPUTE_OPEN" && !closed.has(e.id));
+  const types = S.eventTypes.filter((t) => t.active);
+  $("#evPanel").innerHTML = `<div class="card" style="margin-top:12px; border-color:var(--accent)">
+    <h3 style="margin-top:0">Sự kiện của mốc ${m.position} · ${esc(m.name)} (cần: ${esc(m.requiredEventTypeIds.map(evName).join(", "))})</h3>
+    <div class="scroll"><table><tr><th>id</th><th>Loại</th><th>Trạng thái</th><th>Bên</th><th>Lúc</th><th>Số giấy tờ</th><th>Đóng tranh chấp</th><th>Ghi chú</th></tr>
+      ${events.map((e) => `<tr><td>${e.id}</td><td>${esc(e.eventType.name)}</td><td>${tag(e.status)}</td><td>${esc(partyName(e.partyId))}</td><td>${esc(e.happenedAt.replace("T", " "))}</td>
+        <td>${esc(e.documentNo ?? "")}</td><td>${e.resolvesEventId ? "#" + e.resolvesEventId : ""}</td><td>${esc(e.note)}</td></tr>`).join("") || `<tr><td colspan="8" class="hint">Chưa có sự kiện.</td></tr>`}</table></div>
+    ${!RECORDERS.includes(S.user.role) ? `<p class="hint">Vai trò của bạn không ghi sự kiện; bạn đang xem.</p>` : `<h3>Ghi sự kiện mới</h3>
+    <div class="grid">
+      <label>Loại sự kiện<select id="eType">${Object.keys(CAT_VI).map((cat) => `<optgroup label="${CAT_VI[cat]}">${types.filter((t) => t.category === cat).map((t) =>
+        `<option value="${t.id}">${esc(t.name)}${t.actorSide ? (t.actorSide === "BUYER" ? " (bên mua ghi)" : " (nhà cung cấp ghi)") : ""}</option>`).join("")}</optgroup>`).join("")}</select></label>
+      <label>Ghi với tư cách<input value="${esc(partyName(S.user.partyId))}" disabled></label>
+      <label>Lúc xảy ra (trống = bây giờ)<input id="eAt" type="datetime-local"></label>
+      <label>Số giấy tờ<input id="eDoc" placeholder="INV-0451"></label>
+      <label id="eResWrap">Đóng tranh chấp nào<select id="eRes"><option value="">— chọn —</option>${open.map((e) => `<option value="${e.id}">#${e.id} ${esc(e.note)}</option>`).join("")}</select></label>
+      <label>Ghi chú<input id="eNote"></label>
+      <button class="btn" id="eAdd">Ghi sự kiện</button>
+    </div><p class="hint">Trạng thái do máy tự điền theo loại sự kiện; bên ghi là bên của chính bạn.</p>`}</div>`;
+  if (!$("#eType")) return;
+  const syncRes = () => { $("#eResWrap").hidden = S.eventTypes.find((t) => t.id === +$("#eType").value)?.category !== "DISPUTE_RESOLVE"; };
+  $("#eType").onchange = syncRes; syncRes();
+  $("#eAdd").onclick = run(async () => {
+    const body = { milestoneId: m.id, eventTypeId: +$("#eType").value, note: $("#eNote").value };
+    if ($("#eAt").value) body.happenedAt = $("#eAt").value;
+    if ($("#eDoc").value) body.documentNo = $("#eDoc").value;
+    if (!$("#eResWrap").hidden && $("#eRes").value) body.resolvesEventId = +$("#eRes").value;
+    const e = await data("POST", "/events", body); toast("ok", `Đã ghi sự kiện #${e.id} (${e.status}).`); await renderContract();
+  });
+}
+
+// ---------------- Start ----------------
+async function start() {
+  if (!TOKEN) return logout();
+  try { S.user = await data("GET", "/auth/me"); } catch { return; }
+  S.eventTypes = await data("GET", "/event-types?pageSize=100&sortBy=id&order=asc");
+  S.parties = await data("GET", "/parties?pageSize=100&sortBy=id&order=asc");
+  const own = S.parties.find((p) => p.id === S.user.partyId);
+  S.org = own ? (own.type === "APPROVER" ? own.parentId : own.id) : null;
+  $("#loginPage").hidden = true; $("#tabs").hidden = false;
+  $("#who").innerHTML = `${esc(S.user.fullName)} · ${esc(S.user.role)}${S.user.partyId ? " · " + esc(partyName(S.user.partyId)) : ""} · <a href="#" id="logout">Đăng xuất</a>`;
+  $("#logout").onclick = (e) => { e.preventDefault(); logout(); };
+  showTab("lib");
+}
+start();
+</script>
+</body>
+</html>

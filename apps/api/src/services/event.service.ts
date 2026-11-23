@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable } from "@nestjs/common";
 import { DataSource } from "typeorm";
 import { Contract } from "../models/contract.entity";
 import type { Event } from "../models/event.entity";
@@ -8,6 +8,8 @@ import { Party } from "../models/party.entity";
 import { EventRepository } from "../repositories/event.repository";
 import type { CreateEventDto } from "../schemas/contract.schema";
 import { nowInVietnam } from "../utils/dates";
+import { assertCanSee } from "../core/security/access";
+import type { AuthUser } from "../core/security/decorators";
 
 /**
  * Records what happened on a milestone. The status comes from the event type; who may record which
@@ -20,15 +22,19 @@ export class EventService {
     private readonly dataSource: DataSource,
   ) {}
 
-  listByMilestone(milestoneId: number): Promise<Event[]> {
+  async listByMilestone(milestoneId: number, user: AuthUser): Promise<Event[]> {
+    await this.assertMilestoneVisible(milestoneId, user);
     return this.events.listByMilestone(milestoneId);
   }
 
-  getEvent(id: number): Promise<Event> {
-    return this.events.findById(id);
+  async getEvent(id: number, user: AuthUser): Promise<Event> {
+    const event = await this.events.findById(id);
+    await this.assertMilestoneVisible(event.milestoneId, user);
+    return event;
   }
 
-  record(dto: CreateEventDto): Promise<Event> {
+  /** Records an event for the logged-in user's own party; nobody can act in another party's name. */
+  record(dto: CreateEventDto, user: AuthUser): Promise<Event> {
     return this.dataSource.transaction(async (db) => {
       const milestone = await db.getRepository(Milestone).findOne({ where: { id: dto.milestoneId } });
       if (!milestone) throw new BadRequestException(`Milestone ${dto.milestoneId} does not exist`);
@@ -39,10 +45,10 @@ export class EventService {
       const type = await db.getRepository(EventType).findOne({ where: { id: dto.eventTypeId } });
       if (!type || !type.active) throw new BadRequestException(`Event type ${dto.eventTypeId} is not an active event type`);
 
-      // The acting party belongs to this contract: its buyer, the buyer's approvers, or its supplier.
-      const party = await db.getRepository(Party).findOne({ where: { id: dto.partyId } });
+      // The acting party is the user's own, and it belongs to this contract: its buyer, the buyer's approvers, or its supplier.
+      const party = user.partyId === null ? null : await db.getRepository(Party).findOne({ where: { id: user.partyId } });
       const ofContract = party && (party.id === contract.buyerId || party.id === contract.supplierId || party.parentId === contract.buyerId);
-      if (!ofContract) throw new BadRequestException(`Party ${dto.partyId} is not a party of contract ${contract.id}`);
+      if (!ofContract) throw new ForbiddenException(`CONTRACT_ACCESS_DENIED: your party is not a party of contract ${contract.id}`);
 
       const happenedAt = dto.happenedAt ? (dto.happenedAt.length === 16 ? `${dto.happenedAt}:00` : dto.happenedAt) : nowInVietnam();
       let resolvesEventId: number | null = null;
@@ -61,9 +67,16 @@ export class EventService {
       }
 
       return this.events.create({
-        milestoneId: milestone.id, eventTypeId: type.id, status: type.validStatus, partyId: party.id, recordedBy: null,
+        milestoneId: milestone.id, eventTypeId: type.id, status: type.validStatus, partyId: party.id, recordedBy: user.id,
         happenedAt, documentNo: dto.documentNo || null, resolvesEventId, note: dto.note?.trim() ?? "",
       }, db);
     });
+  }
+
+  private async assertMilestoneVisible(milestoneId: number, user: AuthUser): Promise<void> {
+    const db = this.dataSource.manager;
+    const milestone = await db.getRepository(Milestone).findOne({ where: { id: milestoneId } });
+    if (!milestone) throw new BadRequestException(`Milestone ${milestoneId} does not exist`);
+    await assertCanSee(user, await db.getRepository(Contract).findOneOrFail({ where: { id: milestone.contractId } }), db);
   }
 }

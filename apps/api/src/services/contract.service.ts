@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable } from "@nestjs/common";
 import { DataSource, type EntityManager } from "typeorm";
 import type { Contract } from "../models/contract.entity";
 import { MilestoneVersion } from "../models/milestone-version.entity";
@@ -19,6 +19,8 @@ import type {
   UpdateContractMilestoneDto,
 } from "../schemas/contract.schema";
 import { addDays } from "../utils/dates";
+import { assertBuyerStaff, assertCanSee, NEGOTIATORS, organizationOf, SEES_ALL } from "../core/security/access";
+import type { AuthUser } from "../core/security/decorators";
 import { percentOf, rescale, shareOf, splitByPercent, sumAmounts } from "../utils/money";
 import type { Paginated } from "../utils/paging";
 import { BaseService } from "./base.service";
@@ -75,9 +77,20 @@ export class ContractService extends BaseService<Contract, "id"> {
 
   // ---------------- Contracts ----------------
 
-  listContracts(query: ContractListQuery): Promise<Paginated<Contract>> {
+  /** Contracts the user may see: all of them for SYSTEM_ADMIN and AUDITOR, otherwise those of their organisation. */
+  async listContracts(query: ContractListQuery, user: AuthUser): Promise<Paginated<Contract>> {
     const where = definedOnly({ status: query.status, contractTypeId: query.contractTypeId, buyerId: query.buyerId, supplierId: query.supplierId });
-    return this.repository.findPage(query, where);
+    if (SEES_ALL.includes(user.role)) return this.repository.findPage(query, where);
+    const org = await organizationOf(user, this.dataSource.manager);
+    if (org === null) return this.repository.findPage(query, { ...where, id: -1 });
+    return this.repository.findPage(query, [{ ...where, buyerId: org }, { ...where, supplierId: org }]);
+  }
+
+  /** One contract, if the user may see it. */
+  async getContractFor(id: number, user: AuthUser): Promise<ContractDetail> {
+    const contract = await this.repository.findById(id);
+    await assertCanSee(user, contract, this.dataSource.manager);
+    return this.getContract(id);
   }
 
   async getContract(id: number, db?: EntityManager): Promise<ContractDetail> {
@@ -97,8 +110,10 @@ export class ContractService extends BaseService<Contract, "id"> {
   }
 
   /** New DRAFT contract: the type must be active and its template complete (100%) with published milestones. */
-  createContract(dto: CreateContractDto): Promise<ContractDetail> {
+  createContract(dto: CreateContractDto, user: AuthUser): Promise<ContractDetail> {
     return this.dataSource.transaction(async (db) => {
+      if ((await organizationOf(user, db)) !== dto.buyerId)
+        throw new ForbiddenException("CONTRACT_ACCESS_DENIED: you can only create contracts where your organisation is the buyer");
       const type = await this.types.findById(dto.contractTypeId, db);
       if (!type.active) throw new BadRequestException(`Contract type ${type.id} is not active`);
       const template = await this.template.listByType(type.id, db);
@@ -125,9 +140,9 @@ export class ContractService extends BaseService<Contract, "id"> {
   }
 
   /** Terms of a draft. A new value rescales the amounts in proportion; a new start shifts every due date by the same days. */
-  updateContract(id: number, dto: UpdateContractDto): Promise<ContractDetail> {
+  updateContract(id: number, dto: UpdateContractDto, user: AuthUser): Promise<ContractDetail> {
     return this.dataSource.transaction(async (db) => {
-      const contract = await this.draftOrFail(id, db);
+      const contract = await this.draftOrFail(id, db, user);
       const { version, ...sent } = dto;
       const changes = definedOnly(sent);
       if (changes.title !== undefined) changes.title = changes.title.trim();
@@ -147,9 +162,10 @@ export class ContractService extends BaseService<Contract, "id"> {
   }
 
   /** DRAFT -> ACTIVE: milestones add up to the value, the parties are valid and every custom rule set is complete. */
-  activate(id: number, expectedVersion: number): Promise<ContractDetail> {
+  activate(id: number, expectedVersion: number, user: AuthUser): Promise<ContractDetail> {
     return this.dataSource.transaction(async (db) => {
       const detail = await this.getContract(id, db);
+      await assertBuyerStaff(user, detail as unknown as Contract, ["CONTRACT_OWNER"], db);
       if (detail.status !== "DRAFT") throw new ConflictException(`CONTRACT_STATUS: contract ${id} is ${detail.status}, only a draft can be activated`);
       if (!detail.milestones.length) throw new BadRequestException("The contract has no milestones");
       if (!detail.complete)
@@ -176,9 +192,9 @@ export class ContractService extends BaseService<Contract, "id"> {
   // ---------------- Milestones of a draft contract ----------------
 
   /** Adds a library milestone to this contract only, with its current published rules. */
-  addMilestone(contractId: number, dto: AddContractMilestoneDto): Promise<ContractDetail> {
+  addMilestone(contractId: number, dto: AddContractMilestoneDto, user: AuthUser): Promise<ContractDetail> {
     return this.dataSource.transaction(async (db) => {
-      const contract = await this.draftOrFail(contractId, db);
+      const contract = await this.draftOrFail(contractId, db, user);
       const milestone = await this.library.findById(dto.milestoneId, db);
       if (!milestone.active) throw new BadRequestException(`Milestone ${milestone.id} is not active`);
       const published = await this.versions.findPublished(milestone.id, db);
@@ -196,10 +212,10 @@ export class ContractService extends BaseService<Contract, "id"> {
   }
 
   /** Share (given as a percentage, stored as money) or due date of one milestone of a draft. */
-  updateMilestone(id: number, dto: UpdateContractMilestoneDto): Promise<ContractDetail> {
+  updateMilestone(id: number, dto: UpdateContractMilestoneDto, user: AuthUser): Promise<ContractDetail> {
     return this.dataSource.transaction(async (db) => {
       const milestone = await this.milestones.findById(id, db);
-      const contract = await this.draftOrFail(milestone.contractId, db);
+      const contract = await this.draftOrFail(milestone.contractId, db, user);
       const changes = definedOnly({
         amountVndMn: dto.paymentPercent === undefined ? undefined : shareOf(contract.valueVndMn, dto.paymentPercent),
         dueOn: dto.dueOn,
@@ -211,10 +227,10 @@ export class ContractService extends BaseService<Contract, "id"> {
   }
 
   /** Removes a milestone from a draft, and its custom rules if it had some. */
-  removeMilestone(id: number, expectedVersion: number): Promise<ContractDetail> {
+  removeMilestone(id: number, expectedVersion: number, user: AuthUser): Promise<ContractDetail> {
     return this.dataSource.transaction(async (db) => {
       const milestone = await this.milestones.findById(id, db);
-      await this.draftOrFail(milestone.contractId, db);
+      await this.draftOrFail(milestone.contractId, db, user);
       const version = await this.versions.findById(milestone.milestoneVersionId, db);
       await this.milestones.delete(id, expectedVersion, db);
       if (version.isCustom) await db.getRepository(MilestoneVersion).delete(version.id);
@@ -224,10 +240,10 @@ export class ContractService extends BaseService<Contract, "id"> {
   }
 
   /** Gives one milestone its own rules: a draft copy of the rules it uses now, edited through the milestone-version API. */
-  useCustomRules(id: number): Promise<ContractDetail> {
+  useCustomRules(id: number, user: AuthUser): Promise<ContractDetail> {
     return this.dataSource.transaction(async (db) => {
       const milestone = await this.milestones.findById(id, db);
-      await this.draftOrFail(milestone.contractId, db);
+      await this.draftOrFail(milestone.contractId, db, user);
       const current = await this.versions.findById(milestone.milestoneVersionId, db);
       if (current.isCustom) throw new ConflictException(`Milestone ${id} already has its own rules (version ${current.id})`);
       const copy = await this.libraryService.createCustomCopy(current.id, db);
@@ -237,10 +253,10 @@ export class ContractService extends BaseService<Contract, "id"> {
   }
 
   /** Back to the shared rules in use in the library; the contract's own draft rules are dropped. */
-  useSharedRules(id: number): Promise<ContractDetail> {
+  useSharedRules(id: number, user: AuthUser): Promise<ContractDetail> {
     return this.dataSource.transaction(async (db) => {
       const milestone = await this.milestones.findById(id, db);
-      await this.draftOrFail(milestone.contractId, db);
+      await this.draftOrFail(milestone.contractId, db, user);
       const custom = await this.versions.findById(milestone.milestoneVersionId, db);
       if (!custom.isCustom) throw new ConflictException(`Milestone ${id} already uses the shared rules`);
       const published = await this.versions.findPublished(custom.milestoneId, db);
@@ -253,8 +269,10 @@ export class ContractService extends BaseService<Contract, "id"> {
 
   // ---------------- Helpers ----------------
 
-  private async draftOrFail(id: number, db: EntityManager): Promise<Contract> {
+  /** The contract, if it is still a draft and the user negotiates it for the buyer. */
+  private async draftOrFail(id: number, db: EntityManager, user: AuthUser): Promise<Contract> {
     const contract = await this.repository.findById(id, db);
+    await assertBuyerStaff(user, contract, NEGOTIATORS, db);
     if (contract.status !== "DRAFT")
       throw new ConflictException(`CONTRACT_LOCKED: contract ${id} is ${contract.status}; only a draft can change`);
     return contract;

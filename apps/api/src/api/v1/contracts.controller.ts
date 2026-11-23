@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { TAG } from "../../core/api-tags";
+import { EVENT_RECORDERS, NEGOTIATORS } from "../../core/security/access";
+import { CurrentUser, Roles, type AuthUser } from "../../core/security/decorators";
 import { VersionedDto } from "../../schemas/common.schema";
 import {
   AddContractMilestoneDto,
@@ -19,69 +21,73 @@ export class ContractsController {
   constructor(private readonly service: ContractService) {}
 
   @Get()
-  @ApiOperation({ summary: "Danh sách hợp đồng (lọc theo trạng thái, loại, bên mua, nhà cung cấp)" })
-  list(@Query() query: ContractListQuery) {
-    return this.service.listContracts(query);
+  @ApiOperation({ summary: "Hợp đồng của tổ chức mình (quản trị, kiểm toán thấy hết); lọc theo trạng thái, loại, bên" })
+  list(@Query() query: ContractListQuery, @CurrentUser() user: AuthUser) {
+    return this.service.listContracts(query, user);
   }
 
   @Get(":id")
   @ApiOperation({ summary: "Một hợp đồng kèm các mốc (tiền, %, hạn, luật đang gắn), tổng tiền, đủ chưa" })
-  get(@Param("id", ParseIntPipe) id: number) {
-    return this.service.getContract(id);
+  get(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: AuthUser) {
+    return this.service.getContractFor(id, user);
   }
 
   @Post()
-  @ApiOperation({ summary: "Tạo hợp đồng DRAFT từ khuôn của loại hợp đồng (sinh mốc: tiền = % x giá trị, hạn = bắt đầu + số ngày)" })
-  create(@Body() dto: CreateContractDto) {
-    return this.service.createContract(dto);
+  @Roles(...NEGOTIATORS)
+  @ApiOperation({ summary: "[Chủ hợp đồng, Pháp lý bên mua] Tạo hợp đồng DRAFT từ khuôn; bên mua phải là tổ chức của mình" })
+  create(@Body() dto: CreateContractDto, @CurrentUser() user: AuthUser) {
+    return this.service.createContract(dto, user);
   }
 
   @Patch(":id")
-  @ApiOperation({ summary: "Sửa điều khoản khi còn DRAFT (đổi giá trị thì chia lại tiền mốc, đổi ngày bắt đầu thì dời hạn)" })
-  update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateContractDto) {
-    return this.service.updateContract(id, dto);
+  @Roles(...NEGOTIATORS)
+  @ApiOperation({ summary: "[Chủ hợp đồng, Pháp lý bên mua] Sửa điều khoản khi DRAFT (đổi giá trị thì chia lại tiền, đổi ngày bắt đầu thì dời hạn)" })
+  update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateContractDto, @CurrentUser() user: AuthUser) {
+    return this.service.updateContract(id, dto, user);
   }
 
   @Post(":id/activate")
-  @ApiOperation({ summary: "Ký / kích hoạt: kiểm tra đủ tiền và luật riêng, rồi khóa hợp đồng (DRAFT -> ACTIVE)" })
-  activate(@Param("id", ParseIntPipe) id: number, @Body() dto: VersionedDto) {
-    return this.service.activate(id, dto.version);
+  @Roles("CONTRACT_OWNER")
+  @ApiOperation({ summary: "[Chủ hợp đồng bên mua] Ký / kích hoạt: kiểm tra đủ tiền và luật riêng, rồi khóa (DRAFT -> ACTIVE)" })
+  activate(@Param("id", ParseIntPipe) id: number, @Body() dto: VersionedDto, @CurrentUser() user: AuthUser) {
+    return this.service.activate(id, dto.version, user);
   }
 }
 
 @ApiTags(TAG.contractMilestones)
 @Controller()
+@Roles(...NEGOTIATORS)
 export class MilestonesController {
   constructor(private readonly service: ContractService) {}
 
   @Post("contracts/:id/milestones")
-  @ApiOperation({ summary: "Thêm một mốc từ thư viện cho riêng hợp đồng này (khi DRAFT)" })
-  addMilestone(@Param("id", ParseIntPipe) id: number, @Body() dto: AddContractMilestoneDto) {
-    return this.service.addMilestone(id, dto);
+  @ApiOperation({ summary: "[Chủ hợp đồng, Pháp lý bên mua] Thêm một mốc từ thư viện cho riêng hợp đồng này (khi DRAFT)" })
+  addMilestone(@Param("id", ParseIntPipe) id: number, @Body() dto: AddContractMilestoneDto, @CurrentUser() user: AuthUser) {
+    return this.service.addMilestone(id, dto, user);
   }
 
   @Patch("milestones/:id")
-  @ApiOperation({ summary: "Sửa % hoặc hạn của một mốc (khi DRAFT)" })
-  update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateContractMilestoneDto) {
-    return this.service.updateMilestone(id, dto);
+  @ApiOperation({ summary: "[Chủ hợp đồng, Pháp lý bên mua] Sửa % hoặc hạn của một mốc (khi DRAFT)" })
+  update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateContractMilestoneDto, @CurrentUser() user: AuthUser) {
+    return this.service.updateMilestone(id, dto, user);
   }
 
   @Delete("milestones/:id")
-  @ApiOperation({ summary: "Bỏ một mốc khỏi hợp đồng (khi DRAFT, ?version=)" })
-  remove(@Param("id", ParseIntPipe) id: number, @Query() { version }: VersionedDto) {
-    return this.service.removeMilestone(id, version);
+  @ApiOperation({ summary: "[Chủ hợp đồng, Pháp lý bên mua] Bỏ một mốc khỏi hợp đồng (khi DRAFT, ?version=)" })
+  remove(@Param("id", ParseIntPipe) id: number, @Query() { version }: VersionedDto, @CurrentUser() user: AuthUser) {
+    return this.service.removeMilestone(id, version, user);
   }
 
   @Post("milestones/:id/custom-rules")
-  @ApiOperation({ summary: "Dùng luật riêng cho mốc này (chép luật đang dùng thành bản nháp; sửa qua /milestone-versions)" })
-  useCustomRules(@Param("id", ParseIntPipe) id: number) {
-    return this.service.useCustomRules(id);
+  @ApiOperation({ summary: "[Chủ hợp đồng, Pháp lý bên mua] Dùng luật riêng cho mốc này (chép luật đang dùng thành bản nháp; sửa qua /milestone-versions)" })
+  useCustomRules(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: AuthUser) {
+    return this.service.useCustomRules(id, user);
   }
 
   @Delete("milestones/:id/custom-rules")
-  @ApiOperation({ summary: "Bỏ luật riêng, quay về luật chung đang dùng trong thư viện" })
-  useSharedRules(@Param("id", ParseIntPipe) id: number) {
-    return this.service.useSharedRules(id);
+  @ApiOperation({ summary: "[Chủ hợp đồng, Pháp lý bên mua] Bỏ luật riêng, quay về luật chung đang dùng trong thư viện" })
+  useSharedRules(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: AuthUser) {
+    return this.service.useSharedRules(id, user);
   }
 }
 
@@ -91,20 +97,21 @@ export class EventsController {
   constructor(private readonly service: EventService) {}
 
   @Get("milestones/:id/events")
-  @ApiOperation({ summary: "Các sự kiện của một mốc, theo thời gian" })
-  listByMilestone(@Param("id", ParseIntPipe) id: number) {
-    return this.service.listByMilestone(id);
+  @ApiOperation({ summary: "Các sự kiện của một mốc, theo thời gian (chỉ hợp đồng của tổ chức mình)" })
+  listByMilestone(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: AuthUser) {
+    return this.service.listByMilestone(id, user);
   }
 
   @Get("events/:id")
   @ApiOperation({ summary: "Một sự kiện" })
-  get(@Param("id", ParseIntPipe) id: number) {
-    return this.service.getEvent(id);
+  get(@Param("id", ParseIntPipe) id: number, @CurrentUser() user: AuthUser) {
+    return this.service.getEvent(id, user);
   }
 
   @Post("events")
-  @ApiOperation({ summary: "Ghi sự kiện (hợp đồng phải ACTIVE; trạng thái tự điền; đóng tranh chấp phải chỉ rõ tranh chấp nào)" })
-  record(@Body() dto: CreateEventDto) {
-    return this.service.record(dto);
+  @Roles(...EVENT_RECORDERS)
+  @ApiOperation({ summary: "[Các bên của hợp đồng] Ghi sự kiện cho bên của chính mình (hợp đồng phải ACTIVE; trạng thái tự điền)" })
+  record(@Body() dto: CreateEventDto, @CurrentUser() user: AuthUser) {
+    return this.service.record(dto, user);
   }
 }

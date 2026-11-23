@@ -1,6 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { DataSource, In, type EntityManager } from "typeorm";
+import { assertBuyerStaff, assertCanSee, NEGOTIATORS } from "../core/security/access";
+import type { AuthUser } from "../core/security/decorators";
+import { Contract } from "../models/contract.entity";
 import { EventType } from "../models/event-type.entity";
+import { Milestone } from "../models/milestone.entity";
 import type { MilestoneLibrary } from "../models/milestone-library.entity";
 import type { MilestoneVersion } from "../models/milestone-version.entity";
 import type { PaymentRule } from "../models/payment-rule.entity";
@@ -82,9 +86,17 @@ export class MilestoneLibraryService extends BaseService<MilestoneLibrary, "id">
     });
   }
 
-  updateVersion(id: number, dto: UpdateVersionDto): Promise<VersionDetail> {
+  /** A version; a contract's own rules only for those who may see that contract. */
+  async getVersionFor(id: number, user: AuthUser): Promise<VersionDetail> {
+    const version = await this.versions.findById(id);
+    const contract = await this.contractOf(version, this.dataSource.manager);
+    if (contract) await assertCanSee(user, contract, this.dataSource.manager);
+    return this.getVersion(id);
+  }
+
+  updateVersion(id: number, dto: UpdateVersionDto, user: AuthUser): Promise<VersionDetail> {
     return this.dataSource.transaction(async (db) => {
-      await this.draftOrFail(id, db);
+      await this.assertCanEdit(await this.draftOrFail(id, db), user, db);
       if (dto.requiredEventTypeIds) await this.assertEvidenceTypes(dto.requiredEventTypeIds, db);
       const { version, ...changes } = dto;
       await this.versions.update(id, version, changes, db);
@@ -108,18 +120,18 @@ export class MilestoneLibraryService extends BaseService<MilestoneLibrary, "id">
 
   // ---------------- Rules ----------------
 
-  addRule(versionId: number, dto: CreateRuleDto): Promise<PaymentRule> {
+  addRule(versionId: number, dto: CreateRuleDto, user: AuthUser): Promise<PaymentRule> {
     return this.dataSource.transaction(async (db) => {
-      await this.draftOrFail(versionId, db);
+      await this.assertCanEdit(await this.draftOrFail(versionId, db), user, db);
       this.assertRuleWords(dto);
       return this.rules.create({ ...dto, name: dto.name.trim(), condition: dto.condition.trim(), milestoneVersionId: versionId }, db);
     });
   }
 
-  updateRule(id: number, dto: UpdateRuleDto): Promise<PaymentRule> {
+  updateRule(id: number, dto: UpdateRuleDto, user: AuthUser): Promise<PaymentRule> {
     return this.dataSource.transaction(async (db) => {
       const rule = await this.rules.findById(id, db);
-      await this.draftOrFail(rule.milestoneVersionId, db);
+      await this.assertCanEdit(await this.draftOrFail(rule.milestoneVersionId, db), user, db);
       const { version, ...sent } = dto;
       const changes = definedOnly(sent);
       this.assertRuleWords({ ...rule, ...changes });
@@ -127,10 +139,10 @@ export class MilestoneLibraryService extends BaseService<MilestoneLibrary, "id">
     });
   }
 
-  removeRule(id: number, expectedVersion: number): Promise<void> {
+  removeRule(id: number, expectedVersion: number, user: AuthUser): Promise<void> {
     return this.dataSource.transaction(async (db) => {
       const rule = await this.rules.findById(id, db);
-      await this.draftOrFail(rule.milestoneVersionId, db);
+      await this.assertCanEdit(await this.draftOrFail(rule.milestoneVersionId, db), user, db);
       await this.rules.delete(id, expectedVersion, db);
     });
   }
@@ -142,6 +154,20 @@ export class MilestoneLibraryService extends BaseService<MilestoneLibrary, "id">
   }
 
   // ---------------- Helpers ----------------
+
+  /** The contract a custom version belongs to (through the one milestone that uses it); null for shared versions. */
+  private async contractOf(version: MilestoneVersion, db: EntityManager): Promise<Contract | null> {
+    if (!version.isCustom) return null;
+    const milestone = await db.getRepository(Milestone).findOne({ where: { milestoneVersionId: version.id } });
+    return milestone ? db.getRepository(Contract).findOneOrFail({ where: { id: milestone.contractId } }) : null;
+  }
+
+  /** Shared versions: the system administrator. A contract's own rules: that contract's buyer negotiators. */
+  private async assertCanEdit(version: MilestoneVersion, user: AuthUser, db: EntityManager): Promise<void> {
+    const contract = await this.contractOf(version, db);
+    if (contract) return assertBuyerStaff(user, contract, NEGOTIATORS, db);
+    if (user.role !== "SYSTEM_ADMIN") throw new ForbiddenException("ROLE_NOT_ALLOWED: only SYSTEM_ADMIN edits the shared milestone library");
+  }
 
   /** What a version still lacks before it can be published (empty when complete). */
   completeness(version: MilestoneVersion, rules: PaymentRule[]): string[] {
