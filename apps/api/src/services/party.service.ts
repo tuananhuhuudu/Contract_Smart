@@ -5,14 +5,14 @@ import type { PartyListQuery } from "../schemas/party.schema";
 import type { Paginated } from "../utils/paging";
 import { BaseService } from "./base.service";
 
-/** Parties come from the Data Pack: read-only for now. */
+/** Parties are loaded by the seed script; read-only in the API for now. */
 @Injectable()
-export class PartyService extends BaseService<Party, "partyId"> {
+export class PartyService extends BaseService<Party, "id"> {
   constructor(repository: PartyRepository) {
     super(repository);
   }
 
   listParties(query: PartyListQuery): Promise<Paginated<Party>> {
-    return this.repository.findPage(query, query.partyType ? { partyType: query.partyType } : {});
+    return this.repository.findPage(query, query.type ? { type: query.type } : {});
   }
 }

@@ -49,16 +49,13 @@ export class User extends BaseModel {
   @Column({ type: "text", comment: `Vai trò: ${USER_ROLES.join(", ")}.` })
   role!: UserRole;
 
-  @Column({ name: "party_id", type: "text", nullable: true, comment: "Bên mà người dùng làm việc cho; NULL với SYSTEM_ADMIN và AUDITOR." })
-  partyId!: string | null;
+  @Column({ name: "party_id", type: "integer", nullable: true, comment: "Bên (parties.id) mà người dùng làm việc cho; NULL với SYSTEM_ADMIN và AUDITOR." })
+  partyId!: number | null;
 
   @Column({ type: "boolean", default: true, comment: "FALSE: tài khoản bị khóa, không đăng nhập được." })
   active!: boolean;
 
-  @Column({ name: "last_login_at", type: "timestamptz", nullable: true, comment: "Lần đăng nhập gần nhất." })
-  lastLoginAt!: Date | null;
-
-  @ManyToOne(() => Party, { onDelete: "RESTRICT", onUpdate: "CASCADE" })
-  @JoinColumn({ name: "party_id", referencedColumnName: "partyId", foreignKeyConstraintName: "users_party_fkey" })
+  @ManyToOne(() => Party, { onDelete: "RESTRICT" })
+  @JoinColumn({ name: "party_id", foreignKeyConstraintName: "users_party_fkey" })
   party!: Party | null;
 }

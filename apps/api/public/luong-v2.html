@@ -133,7 +133,13 @@
 const API = "/api/v1";
 const $ = (s) => document.querySelector(s);
 const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const get = async (p) => { const r = await fetch(API + p); const j = await r.json(); if (!r.ok) throw new Error(j.message); return j.data; };
+// Initial data comes from a saved snapshot of the old API (preview-data.json), so the page keeps working while the database is rebuilt.
+let SNAPSHOT = null;
+const get = async (p) => {
+  SNAPSHOT ??= await fetch("preview-data.json").then((r) => r.ok ? r.json() : {}).catch(() => ({}));
+  if (p in SNAPSHOT) return SNAPSHOT[p];
+  const r = await fetch(API + p); const j = await r.json(); if (!r.ok) throw new Error(j.message); return j.data;
+};
 const msg = (el, kind, text) => { $(el).innerHTML = text ? `<div class="msg ${kind}">${text}</div>` : ""; };
 const tag = (v) => `<span class="tag ${v}">${v}</span>`;
 const addDays = (iso, n) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };

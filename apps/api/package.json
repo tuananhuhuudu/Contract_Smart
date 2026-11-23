@@ -10,7 +10,8 @@
     "typeorm": "TS_NODE_TRANSPILE_ONLY=true typeorm-ts-node-commonjs -d src/core/data-source.ts",
     "db:generate": "pnpm typeorm migration:generate",
     "db:migrate": "pnpm typeorm migration:run",
-    "db:revert": "pnpm typeorm migration:revert"
+    "db:revert": "pnpm typeorm migration:revert",
+    "db:seed": "TS_NODE_TRANSPILE_ONLY=true ts-node seeds/datapack.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",

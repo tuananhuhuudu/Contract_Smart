@@ -4,11 +4,11 @@ import { Party } from "../models/party.entity";
 import { BaseRepository } from "./base.repository";
 
 @Injectable()
-export class PartyRepository extends BaseRepository<Party, "partyId"> {
+export class PartyRepository extends BaseRepository<Party, "id"> {
   protected readonly entity = Party;
-  protected readonly idField = "partyId";
-  protected readonly sortableFields = ["partyId", "partyName", "partyType", "region"] as const;
-  protected readonly defaultSort = "partyId";
+  protected readonly idField = "id";
+  protected readonly sortableFields = ["id", "name", "type"] as const;
+  protected readonly defaultSort = "id";
 
   constructor(dataSource: DataSource) {
     super(dataSource);

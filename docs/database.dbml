@@ -1,230 +1,40 @@
-// Contract Smart: the 11 tables that exist today (TypeORM models in apps/api/src/models).
-// Paste into https://dbdiagram.io/d to see the diagram.
-// Every table except events also has the BaseModel columns: version, created_at, updated_at.
-// Columns the Data Pack repeats are not stored; the views engine_parties, engine_contracts,
-// engine_milestones, engine_payment_rules and engine_events rebuild them for the engine
-// (checked: 32,994 cells, 0 diff); contract_type_labels gives a type's template name and rule set id.
+// Contract Smart: the tables that exist today (group 1 of docs/thiet-ke-thu-vien-moc.dbml).
+// Paste into https://dbdiagram.io/d to see the diagram. The full target design is in thiet-ke-thu-vien-moc.dbml.
+// Every table also has: version (optimistic lock), created_at, updated_at.
 
 Project contract_smart {
   database_type: 'PostgreSQL'
-  Note: 'Luong: loai hop dong -> khuon moc + bo luat -> phien ban luat -> hop dong -> moc'
-}
-
-// ============================ Cau hinh ============================
-
-Table contract_types [headercolor: #7a4fd1] {
-  code text [pk, note: 'GOODS_SUPPLY']
-  name text [note: 'Cung cap hang hoa']
-  active boolean [default: true]
-  version integer
-  created_at timestamptz
-  updated_at timestamptz
-  Note: 'Loai hop dong; khuon = cac dong contract_type_stages, bo luat = cac dong rule_scopes'
-}
-
-Table rule_scopes [headercolor: #7a4fd1] {
-  release_rule_code text [pk, note: 'R_GOODS_STD:DELIVERY']
-  contract_type text [ref: > contract_types.code]
-  milestone_type text [note: 'DELIVERY']
-  name text [note: 'Giao hang - hang hoa']
-  version integer
-  created_at timestamptz
-  updated_at timestamptz
-  indexes {
-    (contract_type, milestone_type) [unique, note: 'moi loai moc 1 bo luat']
-    (contract_type, release_rule_code) [unique, note: 'dich cua khoa ghep tu stages']
-  }
-  Note: 'Ten bo luat (khong chua luat)'
-}
-
-Table contract_type_stages [headercolor: #7a4fd1] {
-  contract_type text [ref: > contract_types.code]
-  sequence integer [note: '1, 2, 3...']
-  milestone_type text [note: 'DELIVERY']
-  name text [note: 'Giao hang']
-  payment_percent "numeric(5,2)" [note: '40.00, tong cac moc <= 100']
-  required_event_types "text[]" [note: '{DELIVERY, INVOICE}; moi phan tu phai co trong event_types (API kiem)']
-  invoice_required boolean
-  late_penalty_applicable boolean
-  offset_days integer [note: 'han = ngay bat dau + so ngay']
-  release_rule_code text
-  version integer
-  created_at timestamptz
-  updated_at timestamptz
-  indexes {
-    (contract_type, sequence) [pk]
-  }
-  Note: 'Moc mau (khuon) cua loai hop dong'
-}
-
-Table rule_versions [headercolor: #7a4fd1] {
-  id text [pk, note: 'v1']
-  name text
-  status text [note: 'DRAFT -> PUBLISHED -> RETIRED']
-  note text [null]
-  created_by uuid [null, ref: > users.id, note: 'nguoi soan']
-  published_by uuid [null, ref: > users.id, note: 'nguoi cong bo, khac created_by']
-  published_at timestamptz [null]
-  version integer
-  created_at timestamptz
-  updated_at timestamptz
-  Note: 'Phien ban luat; ban da cong bo thi khoa luat'
-}
-
-Table payment_rules [headercolor: #7a4fd1] {
-  rule_id text [pk, note: 'PR0015']
-  rule_version_id text [ref: > rule_versions.id]
-  release_rule_code text [ref: > rule_scopes.release_rule_code]
-  priority integer [note: '10..80, nho xet truoc']
-  rule_name text
-  rule_group text [note: 'BLOCKING | VALIDATION | PENALTY | RELEASE | FALLBACK']
-  condition_expression text [note: 'open_dispute == TRUE, ELSE']
-  decision text [note: 'RELEASE | HOLD | REJECT | PENALTY']
-  reason_code text
-  payable_amount_formula text
-  penalty_amount_formula text
-  rule_description_vi text
-  active boolean
-  version integer
-  created_at timestamptz
-  updated_at timestamptz
-  indexes {
-    (rule_version_id, release_rule_code, priority) [unique]
-  }
-  Note: 'Luat: neu ... thi ...'
-}
-
-// ============================ Hop dong ============================
-
-Table parties [headercolor: #1f7a5a] {
-  party_id text [pk, note: 'B009, S021, A025']
-  party_name text
-  party_type text [note: 'BUYER | SUPPLIER | APPROVER']
-  parent_party_id text [null, ref: > parties.party_id, note: 'approver thuoc ben mua']
-  organization_category text
-  region text
-  approval_role text
-  approval_level integer
-  approval_limit_vnd_mn "numeric(18,2)" [null]
-  allowed_event_types "text[]"
-  can_approve_payment boolean
-  can_raise_dispute boolean
-  status text
-  version integer
-  created_at timestamptz
-  updated_at timestamptz
-  Note: 'Cac ben: ben mua, nha cung cap, nguoi phe duyet'
-}
-
-Table contracts [headercolor: #1f7a5a] {
-  contract_id text [pk, note: 'CT0001']
-  contract_title text
-  contract_type text [ref: > contract_types.code]
-  buyer_id text [ref: > parties.party_id]
-  supplier_id text [ref: > parties.party_id]
-  contract_value_vnd_mn "numeric(18,2)" [note: '1290']
-  signing_date date
-  start_date date
-  end_date date
-  rule_version_id text [ref: > rule_versions.id, note: 'ban luat dung de cham']
-  approval_policy text
-  grace_period_days integer
-  penalty_rate_pct_per_day "numeric(7,4)"
-  max_penalty_pct "numeric(7,4)"
-  lifecycle text [note: 'DRAFT | SIGNING | ACTIVE | CLOSED']
-  version integer
-  created_at timestamptz
-  updated_at timestamptz
-  Note: 'Hop dong'
-}
-
-Table milestones [headercolor: #1f7a5a] {
-  milestone_id text [pk, note: 'MS0002']
-  contract_id text [ref: > contracts.contract_id]
-  milestone_sequence integer
-  milestone_name text
-  due_date date
-  planned_payment_vnd_mn "numeric(18,2)" [note: '516 = 40% x 1290']
-  required_event_types "text[]"
-  invoice_required boolean
-  late_penalty_applicable boolean
-  release_rule_code text [ref: > rule_scopes.release_rule_code, note: 'chep tu moc mau']
-  version integer
-  created_at timestamptz
-  updated_at timestamptz
-  indexes {
-    (contract_id, milestone_sequence) [unique]
-  }
-  Note: 'Moc that cua hop dong'
 }
 
 Table event_types [headercolor: #b5641b] {
-  code text [pk, note: 'DELIVERY']
-  name text [note: 'Giao hang']
-  category text [note: 'EVIDENCE | APPROVAL | REJECTION | DISPUTE_OPEN | DISPUTE_RESOLVE | OTHER']
+  id integer [pk, increment]
+  name text [not null, note: 'Giao hang']
+  category text [not null, note: 'EVIDENCE | APPROVAL | REJECTION | DISPUTE_OPEN | DISPUTE_RESOLVE | OTHER']
   actor_side text [null, note: 'chi voi EVIDENCE: BUYER | SUPPLIER']
-  active boolean [default: true]
-  version integer
-  created_at timestamptz
-  updated_at timestamptz
-  Note: 'Danh muc loai su kien (16 loai). Su kien va moc mau chi dung loai co trong danh muc.'
+  valid_status text [not null, note: 'may tu dien khi ghi su kien: CONFIRMED | APPROVED | REJECTED | OPEN | RESOLVED']
+  active boolean [not null, default: true]
+  Note: 'Danh muc loai su kien'
 }
 
-Table events [headercolor: #b5641b] {
-  event_id text [pk, note: 'EV00003']
-  milestone_id text [ref: > milestones.milestone_id, note: 'hop dong suy ra tu moc']
-  event_timestamp timestamp [note: '2026-06-06T10:20:00, khong mui gio']
-  event_type text [ref: > event_types.code, note: 'loai su kien, tu danh muc event_types']
-  event_status text [note: 'CONFIRMED | APPROVED | REJECTED | OPEN | RESOLVED']
-  actor_party_id text [ref: > parties.party_id, note: 'ben thuc hien; loai ben va vai tro lay tu parties']
-  event_source text [note: 'PORTAL | API | WORKFLOW_ENGINE | MANUAL_ENTRY']
-  document_id text [null, note: 'INV-CT0001-02']
-  amount_vnd_mn "numeric(18,2)" [null, note: '516.00']
-  reference_event_id text [null, ref: > events.event_id, note: 'chi voi DISPUTE_RESOLVED: tro ve DISPUTE_OPENED']
-  event_note text
-  created_at timestamptz
-  Note: 'Su kien da xay ra. Chi them, khong sua, khong xoa (trigger). Khong co version, updated_at.'
+Table parties [headercolor: #1f7a5a] {
+  id integer [pk, increment]
+  name text [not null, note: 'Nova An Business JSC']
+  type text [not null, note: 'BUYER | SUPPLIER | APPROVER']
+  parent_id integer [null, ref: > parties.id, note: 'nguoi phe duyet thuoc ben mua nao']
+  approval_role text [null, note: 'CONTRACT_OWNER | FINANCE_APPROVER | SECONDARY_APPROVER']
+  approval_limit_vnd_mn "numeric(18,2)" [null, note: 'han muc duoc duyet']
+  allowed_event_type_ids "integer[]" [not null, note: '{1,2}: duoc ghi loai su kien nao (API kiem tung id)']
+  active boolean [not null, default: true]
+  Note: 'Cac ben: ben mua, nha cung cap, nguoi phe duyet cua ben mua'
 }
 
-// ============================ Nguoi dung ============================
-
-Table users [headercolor: #2f6fb3] {
-  id uuid [pk, default: `gen_random_uuid()`]
-  email text [unique, note: 'finance@novaan.vn, chu thuong']
-  password_hash text [note: 'bcrypt, khong tra ra API']
-  full_name text
-  role text [note: 'CONTRACT_OWNER | LEGAL_REVIEWER | FINANCE_APPROVER | SECONDARY_APPROVER | ADMIN_AUDITOR | SUPPLIER | SYSTEM_ADMIN | AUDITOR']
-  party_id text [null, ref: > parties.party_id, note: 'ben ma nguoi dung lam viec cho; NULL voi SYSTEM_ADMIN, AUDITOR']
-  active boolean [default: true]
-  last_login_at timestamptz [null]
-  version integer
-  created_at timestamptz
-  updated_at timestamptz
-  Note: 'Tai khoan dang nhap. Ben (parties) quyet dinh nguoi dung thay hop dong nao.'
-}
-
-// Composite key: a stage's rule set must belong to the same contract type.
-Ref: contract_type_stages.(contract_type, release_rule_code) > rule_scopes.(contract_type, release_rule_code)
-
-TableGroup cau_hinh {
-  contract_types
-  rule_scopes
-  contract_type_stages
-  rule_versions
-  payment_rules
-}
-
-TableGroup hop_dong {
-  parties
-  contracts
-  milestones
-}
-
-TableGroup su_kien {
-  event_types
-  events
-}
-
-TableGroup nguoi_dung {
-  users
+Table users [headercolor: #1f7a5a] {
+  id uuid [pk]
+  email text [unique, not null]
+  password_hash text [not null]
+  full_name text [not null]
+  role text [not null, note: 'CONTRACT_OWNER | LEGAL_REVIEWER | FINANCE_APPROVER | SECONDARY_APPROVER | ADMIN_AUDITOR | SUPPLIER | SYSTEM_ADMIN | AUDITOR']
+  party_id integer [null, ref: > parties.id, note: 'NULL voi SYSTEM_ADMIN, AUDITOR']
+  active boolean [not null, default: true]
+  Note: 'Tai khoan dang nhap'
 }

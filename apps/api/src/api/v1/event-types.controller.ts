@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { CreateEventTypeDto, EventTypeListQuery, UpdateEventTypeDto } from "../../schemas/event-type.schema";
 import { EventTypeService } from "../../services/event-type.service";
@@ -14,22 +14,22 @@ export class EventTypesController {
     return this.service.listTypes(query);
   }
 
-  @Get(":code")
+  @Get(":id")
   @ApiOperation({ summary: "Một loại sự kiện" })
-  get(@Param("code") code: string) {
-    return this.service.getById(code);
+  get(@Param("id", ParseIntPipe) id: number) {
+    return this.service.getById(id);
   }
 
   @Post()
-  @ApiOperation({ summary: "Thêm loại sự kiện (chứng từ phải ghi rõ bên nào được ghi)" })
+  @ApiOperation({ summary: "Thêm loại sự kiện (chứng từ phải ghi rõ bên nào được ghi; trạng thái tự suy từ nhóm)" })
   create(@Body() dto: CreateEventTypeDto) {
     return this.service.createType(dto);
   }
 
-  @Patch(":code")
+  @Patch(":id")
   @ApiOperation({ summary: "Đổi tên hoặc bật/tắt loại sự kiện (gửi kèm version); không xóa được" })
-  update(@Param("code") code: string, @Body() dto: UpdateEventTypeDto) {
+  update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateEventTypeDto) {
     const { version, ...changes } = dto;
-    return this.service.update(code, version, changes);
+    return this.service.update(id, version, changes);
   }
 }

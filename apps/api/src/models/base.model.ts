@@ -2,7 +2,7 @@ import { CreateDateColumn, UpdateDateColumn, VersionColumn } from "typeorm";
 
 /**
  * Columns every table shares (like BareBaseModel in model_base.py). Each table extends it and
- * declares its own primary key, because tables use business codes (GOODS_SUPPLY, CT0001...).
+ * declares its own primary key (a generated id).
  */
 export abstract class BaseModel {
   /** Optimistic lock: TypeORM adds 1 on every update; a stale version gives 409 (BaseRepository). */

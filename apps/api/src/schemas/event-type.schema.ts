@@ -1,16 +1,10 @@
-import { Transform } from "class-transformer";
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Matches, Min, ValidateIf } from "class-validator";
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Length, Min, ValidateIf } from "class-validator";
 import { ACTOR_SIDES, EVENT_CATEGORIES } from "../models/event-type.entity";
 import { ListQueryDto } from "./base.schema";
-import { CODE } from "./common.schema";
 
 /** POST /event-types */
 export class CreateEventTypeDto {
-  /** TRAINING_COMPLETED */
-  @Matches(CODE)
-  code!: string;
-
   /** Hoàn thành đào tạo */
   @IsString()
   @Length(1, 200)
@@ -25,7 +19,7 @@ export class CreateEventTypeDto {
   actorSide?: (typeof ACTOR_SIDES)[number];
 }
 
-/** PATCH /event-types/:code: name and on/off only; code, category and side are referenced by events and the engine. */
+/** PATCH /event-types/:id: name and on/off only; category and side are used by events and the engine. */
 export class UpdateEventTypeDto {
   @Type(() => Number)
   @IsInt()

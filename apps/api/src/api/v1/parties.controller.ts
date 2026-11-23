@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from "@nestjs/common";
+import { Controller, Get, Param, ParseIntPipe, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
 import { PartyListQuery } from "../../schemas/party.schema";
 import { PartyService } from "../../services/party.service";
@@ -14,9 +14,9 @@ export class PartiesController {
     return this.service.listParties(query);
   }
 
-  @Get(":partyId")
+  @Get(":id")
   @ApiOperation({ summary: "Một bên" })
-  get(@Param("partyId") partyId: string) {
-    return this.service.getById(partyId);
+  get(@Param("id", ParseIntPipe) id: number) {
+    return this.service.getById(id);
   }
 }
