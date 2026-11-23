@@ -1,9 +1,9 @@
-// Contract Smart: the tables that exist today (TypeORM models in apps/api/src/models).
+// Contract Smart: the 10 tables that exist today (TypeORM models in apps/api/src/models).
 // Paste into https://dbdiagram.io/d to see the diagram.
-// Every table also has the BaseModel columns: version, created_at, updated_at.
+// Every table except events also has the BaseModel columns: version, created_at, updated_at.
 // Columns the Data Pack repeats are not stored; the views engine_parties, engine_contracts,
-// engine_milestones and engine_payment_rules rebuild them for the engine (checked: 14,850 cells, 0 diff);
-// the template name and rule set id of a type come from the view contract_type_labels.
+// engine_milestones, engine_payment_rules and engine_events rebuild them for the engine
+// (checked: 32,994 cells, 0 diff); contract_type_labels gives a type's template name and rule set id.
 
 Project contract_smart {
   database_type: 'PostgreSQL'
@@ -43,7 +43,7 @@ Table contract_type_stages [headercolor: #7a4fd1] {
   milestone_type text [note: 'DELIVERY']
   name text [note: 'Giao hang']
   payment_percent "numeric(5,2)" [note: '40.00, tong cac moc <= 100']
-  required_event_types "text[]" [note: '{DELIVERY, INVOICE}']
+  required_event_types "text[]" [note: '{DELIVERY, INVOICE}; moi phan tu phai co trong event_types (API kiem)']
   invoice_required boolean
   late_penalty_applicable boolean
   offset_days integer [note: 'han = ngay bat dau + so ngay']
@@ -158,6 +158,34 @@ Table milestones [headercolor: #1f7a5a] {
   Note: 'Moc that cua hop dong'
 }
 
+Table event_types [headercolor: #b5641b] {
+  code text [pk, note: 'DELIVERY']
+  name text [note: 'Giao hang']
+  category text [note: 'EVIDENCE | APPROVAL | REJECTION | DISPUTE_OPEN | DISPUTE_RESOLVE | OTHER']
+  actor_side text [null, note: 'chi voi EVIDENCE: BUYER | SUPPLIER']
+  active boolean [default: true]
+  version integer
+  created_at timestamptz
+  updated_at timestamptz
+  Note: 'Danh muc loai su kien (16 loai). Su kien va moc mau chi dung loai co trong danh muc.'
+}
+
+Table events [headercolor: #b5641b] {
+  event_id text [pk, note: 'EV00003']
+  milestone_id text [ref: > milestones.milestone_id, note: 'hop dong suy ra tu moc']
+  event_timestamp timestamp [note: '2026-06-06T10:20:00, khong mui gio']
+  event_type text [ref: > event_types.code, note: 'loai su kien, tu danh muc event_types']
+  event_status text [note: 'CONFIRMED | APPROVED | REJECTED | OPEN | RESOLVED']
+  actor_party_id text [ref: > parties.party_id, note: 'ben thuc hien; loai ben va vai tro lay tu parties']
+  event_source text [note: 'PORTAL | API | WORKFLOW_ENGINE | MANUAL_ENTRY']
+  document_id text [null, note: 'INV-CT0001-02']
+  amount_vnd_mn "numeric(18,2)" [null, note: '516.00']
+  reference_event_id text [null, ref: > events.event_id, note: 'chi voi DISPUTE_RESOLVED: tro ve DISPUTE_OPENED']
+  event_note text
+  created_at timestamptz
+  Note: 'Su kien da xay ra. Chi them, khong sua, khong xoa (trigger). Khong co version, updated_at.'
+}
+
 // Composite key: a stage's rule set must belong to the same contract type.
 Ref: contract_type_stages.(contract_type, release_rule_code) > rule_scopes.(contract_type, release_rule_code)
 
@@ -173,4 +201,9 @@ TableGroup hop_dong {
   parties
   contracts
   milestones
+}
+
+TableGroup su_kien {
+  event_types
+  events
 }

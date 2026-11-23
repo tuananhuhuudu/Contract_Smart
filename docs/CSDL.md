@@ -6,7 +6,7 @@ Tài liệu này mô tả **các bảng đang có thật** trong database. Sơ �
 
 ## 1. Tổng quan
 
-Có **8 bảng**, chia 2 nhóm, phục vụ luồng: loại hợp đồng → khuôn mốc + bộ luật → phiên bản luật → hợp đồng → mốc → (engine chấm từng mốc).
+Có **10 bảng**, chia 3 nhóm, phục vụ luồng: loại hợp đồng → khuôn mốc + bộ luật → phiên bản luật → hợp đồng → mốc → (engine chấm từng mốc).
 
 | Nhóm | Bảng | Vai trò |
 | --- | --- | --- |
@@ -18,6 +18,8 @@ Có **8 bảng**, chia 2 nhóm, phục vụ luồng: loại hợp đồng → kh
 | Hợp đồng | `parties` | Bên mua, nhà cung cấp, người phê duyệt |
 | | `contracts` | Hợp đồng |
 | | `milestones` | Mốc thanh toán thật của hợp đồng |
+| Sự kiện | `event_types` | Danh mục loại sự kiện (giao hàng, hóa đơn, duyệt...) |
+| | `events` | Những việc đã xảy ra: giao hàng, hóa đơn, duyệt, tranh chấp... (chỉ thêm) |
 
 ```
 contract_types ──< rule_scopes ──< payment_rules >── rule_versions
@@ -25,6 +27,8 @@ contract_types ──< rule_scopes ──< payment_rules >── rule_versions
       └──< contracts >── parties                              │
               │   └──────────────── rule_versions <───────────┘
               └──< milestones ──> rule_scopes
+                       └──< events >── parties
+                              └──> event_types
 ```
 `A ──< B`: một A có nhiều B. `A ──> B`: A trỏ tới B.
 
@@ -278,6 +282,68 @@ Engine chấm **từng mốc**: lấy bộ luật từ `release_rule_code`, phi�
 - `milestones_contract_sequence_key`: không trùng (contract_id, milestone_sequence)
 - `milestones_sequence_check`: `((milestone_sequence >= 1))`
 
+### 3.9 `events`: Sự kiện
+
+Những việc đã xảy ra khi thực hiện hợp đồng: ký, giao hàng, hóa đơn, nghiệm thu, phê duyệt, từ chối, mở và đóng tranh chấp. Engine chấm mốc dựa vào các sự kiện của mốc. **Chỉ thêm, không sửa, không xóa:** trigger `events_append_only` chặn UPDATE và DELETE, `events_no_truncate` chặn TRUNCATE; sự kiện ghi nhầm sẽ được hủy qua đề nghị ngoại lệ (bảng `exception_requests`, chưa làm). Vì vậy bảng **không có `version`, `updated_at`** và không kế thừa `BaseModel`.
+
+Không lưu 5 cột Data Pack tính lại được: `contract_id` (từ mốc), `contract_event_sequence` (thứ tự theo thời gian trong hợp đồng), `actor_party_type`, `actor_role` (từ `parties`), `data_is_synthetic`; view `engine_events` dựng lại.
+
+| Cột | Kiểu | Bắt buộc | Mặc định | Khóa | Ý nghĩa |
+| --- | --- | --- | --- | --- | --- |
+| `event_id` | text | ✓ |  | PK | Mã sự kiện, ví dụ EV00003; API cấp tự động. |
+| `milestone_id` | text | ✓ |  | FK → `milestones(milestone_id)` | Mốc của sự kiện; hợp đồng suy ra từ mốc. |
+| `event_timestamp` | timestamp | ✓ |  |  | Thời điểm xảy ra, không múi giờ (`2026-06-06T10:20:00`); API mặc định là giờ Việt Nam hiện tại. |
+| `event_type` | text | ✓ |  | FK → `event_types(code)` | Loại sự kiện, lấy từ danh mục `event_types`; loại đã tắt thì API không cho ghi. |
+| `event_status` | text | ✓ |  |  | CONFIRMED, APPROVED, REJECTED, OPEN hoặc RESOLVED. |
+| `actor_party_id` | text | ✓ |  | FK → `parties(party_id)` | Bên thực hiện; phải là bên mua, nhà cung cấp hoặc người duyệt của bên mua trong hợp đồng (API kiểm). |
+| `event_source` | text | ✓ | PORTAL |  | PORTAL, API, WORKFLOW_ENGINE, MANUAL_ENTRY. |
+| `document_id` | text |  |  |  | Mã chứng từ kèm theo. |
+| `amount_vnd_mn` | numeric(18,2) |  |  |  | Số tiền gắn với sự kiện (hóa đơn, phê duyệt), triệu VND. |
+| `reference_event_id` | text |  |  | FK → `events(event_id)` (kiểm lúc commit) | Chỉ với DISPUTE_RESOLVED: sự kiện DISPUTE_OPENED được đóng. |
+| `event_note` | text | ✓ | '' |  | Ghi chú ngắn. |
+| `created_at` | timestamptz | ✓ | now() |  | Thời điểm ghi vào hệ thống. |
+
+**Ràng buộc**
+
+- `events_status_check`, `events_source_check`: giá trị nằm trong danh sách.
+- `events_amount_check`: `amount_vnd_mn >= 0`.
+- `events_reference_check`: có `reference_event_id` **khi và chỉ khi** là `DISPUTE_RESOLVED`.
+
+**API kiểm thêm khi ghi** (`POST /events`): hợp đồng đang `ACTIVE`; bên thực hiện thuộc hợp đồng; đóng tranh chấp phải trỏ về một `DISPUTE_OPENED` của **cùng mốc**, không sớm hơn lúc mở và chưa được đóng. Có đúng bên được phép ghi loại sự kiện đó hay không là việc của engine (để giữ được các tình huống sai thẩm quyền của Data Pack).
+
+### 3.10 `event_types`: Danh mục loại sự kiện
+
+Các loại sự kiện được phép dùng. **Sự kiện** (`events.event_type`, khóa ngoại) và **mốc mẫu** (`contract_type_stages.required_event_types`, API kiểm từng phần tử) chỉ dùng được loại có trong danh mục và đang bật, nên không có chuyện mốc đòi một loại sự kiện mà không ai ghi được. Thêm loại mới qua `POST /event-types`; không xóa được (sự kiện cũ vẫn trỏ tới), chỉ tắt (`active = false`). Mã, nhóm và bên ghi không đổi được sau khi tạo.
+
+`category` và `actor_side` cho engine biết cách đọc một sự kiện: chứng từ do bên nào ghi, phê duyệt, từ chối, mở hay đóng tranh chấp. Migration nạp sẵn 16 loại theo `NGHIEP_VU.md` mục 2.1:
+
+| Nhóm (`category`) | Bên ghi (`actor_side`) | Loại |
+| --- | --- | --- |
+| EVIDENCE | BUYER | CONTRACT_SIGNED, KICKOFF_CONFIRMED, REQUIREMENTS_APPROVED, UAT_PASSED, ACCEPTANCE |
+| EVIDENCE | SUPPLIER | DELIVERY, INVOICE, GO_LIVE, SERVICE_ACTIVATED, SERVICE_COMPLETED, WARRANTY_COMPLETED |
+| APPROVAL | | APPROVAL |
+| REJECTION | | REJECTION |
+| DISPUTE_OPEN | | DISPUTE_OPENED |
+| DISPUTE_RESOLVE | | DISPUTE_RESOLVED |
+| OTHER | | CONTRACT_CLOSE_REQUEST |
+
+| Cột | Kiểu | Bắt buộc | Mặc định | Khóa | Ý nghĩa |
+| --- | --- | --- | --- | --- | --- |
+| `version` | integer | ✓ | 1 |  | Số phiên bản, tăng mỗi lần sửa (khóa lạc quan). |
+| `created_at` | timestamptz | ✓ | now() |  | Thời điểm tạo dòng. |
+| `updated_at` | timestamptz | ✓ | now() |  | Thời điểm sửa gần nhất. |
+| `code` | text | ✓ |  | PK | Mã loại sự kiện, ví dụ DELIVERY. |
+| `name` | text | ✓ |  |  | Tên hiển thị, ví dụ Giao hàng. |
+| `category` | text | ✓ |  |  | Nhóm: EVIDENCE, APPROVAL, REJECTION, DISPUTE_OPEN, DISPUTE_RESOLVE, OTHER. |
+| `actor_side` | text |  |  |  | Với chứng từ: BUYER hoặc SUPPLIER; NULL với các nhóm khác. |
+| `active` | boolean | ✓ | true |  | FALSE: không chọn được cho mốc mẫu và sự kiện mới. |
+
+**Ràng buộc**
+
+- `event_types_code_check`: chữ hoa, số, gạch dưới.
+- `event_types_category_check`, `event_types_side_check`: giá trị nằm trong danh sách.
+- `event_types_evidence_side_check`: có `actor_side` **khi và chỉ khi** là `EVIDENCE`.
+
 ## 4. View cho engine
 
 Engine đọc đúng các cột của Data Pack. 4 view dựng lại các cột không lưu; API xuất dữ liệu cho engine bằng các view này.
@@ -288,11 +354,12 @@ Engine đọc đúng các cột của Data Pack. 4 view dựng lại các cột 
 | `engine_parties` | `country` = `VN`, `data_is_synthetic` = `TRUE` |
 | `engine_contracts` | `workflow_template`, `rule_set_id` (từ `contract_type_labels`); `approval_quorum`, `auto_release_allowed` (từ `approval_policy`); `currency`, `initial_contract_status`, `data_is_synthetic` |
 | `engine_milestones` | `milestone_type` (từ bộ luật), `payment_percent` (tiền ÷ giá trị), `approval_required`, `required_approval_quorum`, `required_approval_roles` (từ chính sách của hợp đồng), `grace_period_days`, `penalty_rate_pct_per_day`, `max_penalty_pct` (từ hợp đồng, bằng 0 nếu mốc không phạt trễ), `required_condition` (ghép lại), các hằng số |
+| `engine_events` | `contract_id` (từ mốc), `contract_event_sequence` (`row_number()` theo thời gian, rồi mã sự kiện), `actor_party_type`, `actor_role` (từ `parties`), `data_is_synthetic`; `event_timestamp` in lại dạng `YYYY-MM-DDTHH:MM:SS` |
 | `engine_payment_rules` | `rule_set_id`, `workflow_template`, `contract_type`, `applies_to_milestone_type` (từ bộ luật), `evaluation_order`, `stop_processing`, `parameter_source`, `data_is_synthetic` |
 
 Hàm `approval_roles(policy)` trả về vai trò cần duyệt theo chính sách: tự động → không ai; 1 người → `CONTRACT_OWNER`; 2 người → `CONTRACT_OWNER`, `SECONDARY_APPROVER`; tài chính + chủ hợp đồng → `CONTRACT_OWNER`, `FINANCE_APPROVER`.
 
-**Đã kiểm chứng:** nạp toàn bộ Data Pack (65 bên, 100 hợp đồng, 405 mốc, 128 luật) vào các bảng rồi so từng ô của view với file CSV gốc: **14.850 ô, không lệch ô nào**.
+**Đã kiểm chứng:** nạp toàn bộ Data Pack (65 bên, 100 hợp đồng, 405 mốc, 128 luật, 1.134 sự kiện) vào các bảng rồi so từng ô của 5 view với file CSV gốc: **32.994 ô, không lệch ô nào**.
 
 ## 5. Trigger
 
@@ -300,8 +367,9 @@ Hàm `approval_roles(policy)` trả về vai trò cần duyệt theo chính sác
 | --- | --- | --- |
 | `rule_versions_status_guard` | `rule_versions` | Đổi trạng thái khác DRAFT → PUBLISHED → RETIRED |
 | `payment_rules_version_frozen` | `payment_rules` | Thêm, sửa, xóa luật của phiên bản đã công bố |
+| `events_append_only`, `events_no_truncate` | `events` | Mọi UPDATE, DELETE, TRUNCATE |
 
-Lỗi do trigger trả về API là **409** kèm mã lỗi (`RULE_VERSION_IS_FROZEN`, `RULE_VERSION_STATUS`).
+Lỗi do trigger trả về API là **409** kèm mã lỗi (`RULE_VERSION_IS_FROZEN`, `RULE_VERSION_STATUS`, `APPEND_ONLY_TABLE`). Muốn xóa dữ liệu thử trên máy dev thì phải tắt trigger trong transaction (`ALTER TABLE ... DISABLE TRIGGER USER`), xóa, rồi bật lại.
 
 ## 6. Migration
 
@@ -312,6 +380,8 @@ Lỗi do trigger trả về API là **409** kèm mã lỗi (`RULE_VERSION_IS_FRO
 | `DropRecomputableColumns` | Bỏ 30 cột suy ra được; thêm `approval_roles()` và 4 view `engine_*` |
 | `DropLabelColumns` | Bỏ `contract_types.workflow_template`, `rule_set_id`, `contracts.amended_end_date`; thêm `contract_type_labels` |
 | `DropOrigin` | Bỏ cột `origin` ở mọi bảng và trigger khóa dữ liệu Data Pack |
+| `Events` | Bảng `events`, trigger chỉ thêm, view `engine_events` |
+| `EventTypes` | Bảng `event_types` (nạp sẵn 16 loại); `events.event_type` thành khóa ngoại |
 
 ## 7. Lệnh thường dùng
 
@@ -327,4 +397,4 @@ Chạy trong `apps/api`, Postgres đang chạy (`pnpm db:up` ở thư mục gố
 
 ## 8. Chưa có
 
-`events` (sự kiện), `exception_requests` (hủy sự kiện sai), `engine_runs`, `milestone_evaluations`, `milestone_status_history` (kết quả chấm), `payments`, `milestone_notes`, `organizations`, `users`, `audit_log`; script seed nạp Data Pack.
+`exception_requests` (hủy sự kiện sai), `engine_runs`, `milestone_evaluations`, `milestone_status_history` (kết quả chấm), `payments`, `milestone_notes`, `organizations`, `users`, `audit_log`; script seed nạp Data Pack.

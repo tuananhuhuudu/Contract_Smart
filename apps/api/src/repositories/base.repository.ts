@@ -107,8 +107,9 @@ export abstract class BaseRepository<T extends ObjectLiteral, K extends keyof T 
   async create(data: DeepPartial<T>, db?: EntityManager): Promise<T> {
     const repo = this.repo(db);
     const entity = repo.create(data);
-    await repo.insert(entity as QueryDeepPartialEntity<T>); // fills defaults (version, created_at) back in
-    return entity;
+    await repo.insert(entity as QueryDeepPartialEntity<T>);
+    // Read the row back: the caller gets what the database stored ("516.00", defaults), not its input.
+    return this.findById(entity[this.idField], db);
   }
 
   /** Inserts several rows in one statement (seed data, all milestones of a contract). */

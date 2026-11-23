@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import path from "node:path";
+import { types } from "pg";
 import { DataSource, type DataSourceOptions } from "typeorm";
 
 // The TypeORM CLI imports this file directly, so it loads apps/api/.env itself (Node built-in).
@@ -8,6 +9,10 @@ try {
 } catch {
   // No .env file: rely on the real environment.
 }
+
+// A "timestamp without time zone" is a wall-clock time (event_timestamp): return it as written,
+// "2026-06-06T10:20:00", instead of a Date shifted by the server's time zone.
+types.setTypeParser(1114, (value: string) => value.replace(" ", "T"));
 
 /** Connection used by the API (like core/database.py). Entities are the classes in src/models. */
 export const databaseOptions: DataSourceOptions = {

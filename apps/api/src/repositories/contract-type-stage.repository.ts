@@ -31,7 +31,7 @@ export class ContractTypeStageRepository {
     const repo = this.repo(db);
     const stage = repo.create(data);
     await repo.insert(stage as QueryDeepPartialEntity<ContractTypeStage>);
-    return stage;
+    return this.findOne(stage.contractType, stage.sequence, db); // as stored, not as sent
   }
 
   async update(

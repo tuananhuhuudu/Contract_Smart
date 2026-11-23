@@ -5,6 +5,7 @@ import type { ContractTypeStage } from "../models/contract-type-stage.entity";
 import { RuleScope } from "../models/rule-scope.entity";
 import { ContractTypeRepository } from "../repositories/contract-type.repository";
 import { ContractTypeStageRepository } from "../repositories/contract-type-stage.repository";
+import { EventTypeRepository } from "../repositories/event-type.repository";
 import type { ContractTypeListQuery, CreateStageDto, UpdateStageDto } from "../schemas/contract-type.schema";
 import { sumPercents } from "../utils/money";
 import type { Paginated } from "../utils/paging";
@@ -24,6 +25,7 @@ export class ContractTypeService extends BaseService<ContractType, "code"> {
   constructor(
     repository: ContractTypeRepository,
     private readonly stages: ContractTypeStageRepository,
+    private readonly eventTypes: EventTypeRepository,
     private readonly dataSource: DataSource,
   ) {
     super(repository);
@@ -48,6 +50,7 @@ export class ContractTypeService extends BaseService<ContractType, "code"> {
     return this.dataSource.transaction(async (db) => {
       await this.repository.findById(code, db);
       await this.assertRuleScopeOfType(code, dto.releaseRuleCode, db);
+      await this.assertEventTypes(dto.requiredEventTypes, db);
       await this.assertPercentFits(code, null, dto.paymentPercent, db);
       return this.stages.create({ ...dto, contractType: code }, db);
     });
@@ -57,6 +60,7 @@ export class ContractTypeService extends BaseService<ContractType, "code"> {
     const { version, ...changes } = dto;
     return this.dataSource.transaction(async (db) => {
       if (changes.releaseRuleCode) await this.assertRuleScopeOfType(code, changes.releaseRuleCode, db);
+      if (changes.requiredEventTypes) await this.assertEventTypes(changes.requiredEventTypes, db);
       if (changes.paymentPercent) await this.assertPercentFits(code, sequence, changes.paymentPercent, db);
       return this.stages.update(code, sequence, version, changes, db);
     });
@@ -72,6 +76,13 @@ export class ContractTypeService extends BaseService<ContractType, "code"> {
     if (!scope) throw new BadRequestException(`Rule set ${releaseRuleCode} does not exist`);
     if (scope.contractType !== code)
       throw new BadRequestException(`Rule set ${releaseRuleCode} belongs to ${scope.contractType}, not ${code}`);
+  }
+
+  /** A stage may only require event types that exist in the catalogue and are active. */
+  private async assertEventTypes(codes: readonly string[], db: EntityManager): Promise<void> {
+    const unusable = await this.eventTypes.unusable(codes, db);
+    if (unusable.length)
+      throw new BadRequestException(`Not in the event type catalogue or not active: ${unusable.join(", ")}; add them under /event-types first`);
   }
 
   /** The stages of a type may never add up to more than 100%. */
