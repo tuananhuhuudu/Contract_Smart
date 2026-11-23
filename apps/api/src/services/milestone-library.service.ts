@@ -135,6 +135,12 @@ export class MilestoneLibraryService extends BaseService<MilestoneLibrary, "id">
     });
   }
 
+  /** A contract's own copy of a version (conditions + rules), as a draft hidden from the library. */
+  async createCustomCopy(sourceVersionId: number, db: EntityManager): Promise<MilestoneVersion> {
+    const source = await this.versions.findById(sourceVersionId, db);
+    return this.copyVersion(source, { milestoneId: source.milestoneId, versionNo: 1, isCustom: true }, db);
+  }
+
   // ---------------- Helpers ----------------
 
   /** What a version still lacks before it can be published (empty when complete). */

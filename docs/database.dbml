@@ -1,4 +1,4 @@
-// Contract Smart: the tables that exist today (groups 1-3 of docs/thiet-ke-thu-vien-moc.dbml).
+// Contract Smart: the tables that exist today (groups 1-4, all 11 tables, of docs/thiet-ke-thu-vien-moc.dbml).
 // Paste into https://dbdiagram.io/d to see the diagram. The full target design is in thiet-ke-thu-vien-moc.dbml.
 // Every table also has: version (optimistic lock), created_at, updated_at.
 
@@ -97,4 +97,49 @@ Table contract_type_milestones [headercolor: #2f6fb3] {
     (contract_type_id, milestone_id) [unique]
   }
   Note: 'Khuon: loai hop dong gom moc nao, bao nhieu %, han bao lau'
+}
+
+Table contracts [headercolor: #0f766e] {
+  id integer [pk, increment]
+  title text [not null]
+  contract_type_id integer [not null, ref: > contract_types.id]
+  buyer_id integer [not null, ref: > parties.id]
+  supplier_id integer [not null, ref: > parties.id]
+  value_vnd_mn "numeric(18,2)" [not null, note: '1000.00 = 1 ty dong']
+  start_on date [not null]
+  end_on date [not null]
+  approval_policy text [not null, note: 'AUTO_IF_ALL_CONDITIONS | SINGLE_BUYER_APPROVAL | DUAL_APPROVAL | FINANCE_PLUS_OWNER']
+  grace_days integer [not null, note: 'so ngay an han']
+  penalty_pct_per_day "numeric(7,4)" [not null]
+  max_penalty_pct "numeric(7,4)" [not null]
+  status text [not null, note: 'DRAFT (dang dam phan, chinh rieng duoc) -> ACTIVE (khoa) -> CLOSED']
+  Note: 'Hop dong'
+}
+
+Table milestones [headercolor: #0f766e] {
+  id integer [pk, increment]
+  contract_id integer [not null, ref: > contracts.id]
+  position integer [not null]
+  milestone_version_id integer [not null, ref: > milestone_versions.id, note: 'phien ban chung luc tao, hoac luat rieng cua hop dong; ten moc lay qua day']
+  amount_vnd_mn "numeric(18,2)" [not null, note: 'tu tinh: % x gia tri hop dong']
+  due_on date [not null]
+  indexes {
+    (contract_id, position) [unique]
+  }
+  Note: 'Moc that cua hop dong. Them / bot / sua khi hop dong DRAFT; tong tien = gia tri hop dong moi kich hoat duoc.'
+}
+
+Table events [headercolor: #0f766e] {
+  id integer [pk, increment]
+  milestone_id integer [not null, ref: > milestones.id]
+  event_type_id integer [not null, ref: > event_types.id]
+  status text [not null, note: 'may tu dien theo event_types.valid_status']
+  party_id integer [not null, ref: > parties.id, note: 'ben thuc hien']
+  recorded_by uuid [null, ref: > users.id, note: 'nguoi bam nut']
+  happened_at timestamp [not null]
+  document_no text [null, note: 'so hoa don / bien ban; engine phat hien nop trung']
+  resolves_event_id integer [null, ref: > events.id, note: 'chi voi dong tranh chap: dong cai nao']
+  note text [not null, default: '']
+  created_at timestamptz [not null]
+  Note: 'Su kien da xay ra. Chi them, khong sua, khong xoa (trigger).'
 }

@@ -41,3 +41,36 @@ export function splitByPercent(total: string, percents: readonly string[]): stri
 export function sumPercents(percents: readonly string[]): string {
   return fromHundredths(percents.reduce((sum, p) => sum + toHundredths(p), 0n));
 }
+
+/** a x b / c rounded half up, all in hundredths (non-negative values). */
+const mulDiv = (a: bigint, b: bigint, c: bigint): bigint => (a * b + c / 2n) / c;
+
+/** The money a percentage of `total` is worth: shareOf("1290", "40") -> "516.00". */
+export function shareOf(total: string, percent: string): string {
+  return fromHundredths(mulDiv(toHundredths(total), toHundredths(percent), 10000n));
+}
+
+/** What percentage of `total` an amount is: percentOf("516", "1290") -> "40.00". */
+export function percentOf(amount: string, total: string): string {
+  return fromHundredths(mulDiv(toHundredths(amount), 10000n, toHundredths(total)));
+}
+
+/** Sum of amounts, exactly. */
+export function sumAmounts(amounts: readonly string[]): string {
+  return sumPercents(amounts);
+}
+
+/**
+ * Scales amounts that add up to `from` so they add up to `to`, keeping their proportions; the last
+ * amount takes the rounding remainder. rescale(["300", "700"], "1000", "2000") -> ["600.00", "1400.00"]
+ */
+export function rescale(amounts: readonly string[], from: string, to: string): string[] {
+  const oldTotal = toHundredths(from), newTotal = toHundredths(to);
+  let allocated = 0n;
+  return amounts.map((amount, index) => {
+    if (index === amounts.length - 1) return fromHundredths(newTotal - allocated);
+    const share = mulDiv(toHundredths(amount), newTotal, oldTotal);
+    allocated += share;
+    return fromHundredths(share);
+  });
+}

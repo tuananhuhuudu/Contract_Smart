@@ -3,7 +3,7 @@
 Cập nhật: 24/11/2026 · PostgreSQL 17 · ORM TypeORM (model trong `apps/api/src/models`, migration trong `apps/api/migrations`).
 
 - **Thiết kế đích (11 bảng):** `docs/thiet-ke-thu-vien-moc.dbml`, dán vào https://dbdiagram.io/d để xem. Trang bấm thử toàn luồng: http://127.0.0.1:3001/test/luong-v2.html (không ghi DB).
-- **Đã dựng thật:** mục 3 (nhóm 1), mục 4 (nhóm 2), mục 5 (nhóm 3). Các nhóm sau dựng lần lượt, mỗi nhóm xong thì cập nhật tài liệu này.
+- **Đã dựng thật:** nhóm 1–4 (mục 3–6), đủ 11 bảng của thiết kế. Các nhóm sau dựng lần lượt, mỗi nhóm xong thì cập nhật tài liệu này.
 - Thiết kế cũ (mã nghiệp vụ `CT0001`, `R_GOODS_STD:DELIVERY`, bảng `rule_scopes`, `contract_type_stages`, `rule_versions`) đã bỏ; xem lịch sử git nếu cần.
 
 ## 1. Tổng quan
@@ -15,7 +15,7 @@ Luồng: **tạo mốc (điều kiện + luật) → ghép mốc vào loại h�
 | 1. Danh mục, các bên | `event_types`, `parties`, `users` | ✅ Đã dựng |
 | 2. Thư viện mốc | `milestone_library`, `milestone_versions`, `payment_rules` | ✅ Đã dựng (chưa nạp dữ liệu) |
 | 3. Loại hợp đồng | `contract_types`, `contract_type_milestones` | ✅ Đã dựng (chưa nạp dữ liệu) |
-| 4. Hợp đồng | `contracts`, `milestones`, `events` | ⏳ |
+| 4. Hợp đồng | `contracts`, `milestones`, `events` | ✅ Đã dựng (chưa nạp dữ liệu) |
 | 5. Chấm, chi tiền, nhật ký | `milestone_evaluations`, `payments`, `audit_log` | ⏳ (thiết kế cột đang chờ duyệt) |
 
 ## 2. Quy ước chung
@@ -170,19 +170,88 @@ contract_types (Tư vấn) ──< contract_type_milestones (Ký hợp đồng 3
 
 **Ràng buộc:** thứ tự không trùng, một mốc chỉ xuất hiện một lần trong một loại. **API kiểm thêm:** chỉ ghép được mốc **đang bật và đã có phiên bản công bố**; tổng % **không vượt 100** (đủ 100 mới tạo được hợp đồng: `GET /contract-types/:id` trả `totalPercent`, `complete`); thêm / sửa / bỏ mốc thì tự đánh lại thứ tự theo hạn.
 
-## 6. Dữ liệu mẫu
+## 6. Nhóm 4: hợp đồng, mốc thật, sự kiện
 
-`pnpm db:seed` (trong `apps/api`) đọc `data/datapack/*.csv` của BTC và nạp lại từ đầu (xóa rồi nạp). Mã trong CSV (`B009`, `S021`...) chỉ dùng để nối dòng lúc nạp; DB giữ `id` tự sinh. Hiện nạp: **65 bên** (10 bên mua, 25 nhà cung cấp, 30 người phê duyệt). Thư viện mốc và loại hợp đồng **chưa nạp** dữ liệu mẫu. Quyền `DISPUTE` trong CSV được đổi thành cả Mở tranh chấp và Đóng tranh chấp.
+```
+contracts ──< milestones ──> milestone_versions (luật chung, hoặc luật riêng is_custom)
+                  └──< events ──> event_types, parties
+```
 
-## 7. Migration
+**Vòng đời hợp đồng:** DRAFT (đang đàm phán, chỉnh riêng được) → ACTIVE (đã ký: khóa, ghi sự kiện) → CLOSED.
+
+### 6.1 `contracts`: Hợp đồng
+
+| Cột | Kiểu | Bắt buộc | Mặc định | Khóa | Ý nghĩa |
+| --- | --- | --- | --- | --- | --- |
+| `id` | integer | ✓ | tự sinh | PK | Mã hợp đồng. |
+| `title` | text | ✓ |  |  | Tên hợp đồng. |
+| `contract_type_id` | integer | ✓ |  | FK → `contract_types.id` | Loại dùng làm khuôn lúc tạo. |
+| `buyer_id`, `supplier_id` | integer | ✓ |  | FK → `parties.id` | Bên mua, nhà cung cấp (khác nhau). |
+| `value_vnd_mn` | numeric(18,2) | ✓ |  |  | Giá trị (triệu VND), > 0. |
+| `start_on`, `end_on` | date | ✓ |  |  | Bắt đầu ≤ kết thúc. |
+| `approval_policy` | text | ✓ |  |  | AUTO_IF_ALL_CONDITIONS, SINGLE_BUYER_APPROVAL, DUAL_APPROVAL, FINANCE_PLUS_OWNER. |
+| `grace_days` | integer | ✓ |  |  | Số ngày ân hạn. |
+| `penalty_pct_per_day`, `max_penalty_pct` | numeric(7,4) | ✓ |  |  | Phạt mỗi ngày, trần phạt (% tiền mốc). |
+| `status` | text | ✓ | DRAFT |  | DRAFT → ACTIVE → CLOSED. |
+
+**Trigger `contracts_guard`:** chỉ đi DRAFT → ACTIVE → CLOSED; hết DRAFT thì điều khoản không đổi được, không xóa được.
+
+### 6.2 `milestones`: Mốc thật
+
+| Cột | Kiểu | Bắt buộc | Mặc định | Khóa | Ý nghĩa |
+| --- | --- | --- | --- | --- | --- |
+| `id` | integer | ✓ | tự sinh | PK | Mã mốc. |
+| `contract_id` | integer | ✓ |  | FK → `contracts.id` | Thuộc hợp đồng nào. |
+| `position` | integer | ✓ |  |  | Thứ tự 1, 2, 3 (API tự xếp theo hạn); không trùng trong hợp đồng. |
+| `milestone_version_id` | integer | ✓ |  | FK → `milestone_versions.id` | Luật dùng để chấm; tên mốc lấy qua đây. |
+| `amount_vnd_mn` | numeric(18,2) | ✓ |  |  | Tiền của mốc = % × giá trị; % hiển thị = tiền ÷ giá trị. |
+| `due_on` | date | ✓ |  |  | Hạn. |
+
+**Trigger `milestones_guard`:** chỉ thêm / sửa / xóa khi hợp đồng còn DRAFT.
+
+### 6.3 `events`: Sự kiện
+
+| Cột | Kiểu | Bắt buộc | Mặc định | Khóa | Ý nghĩa |
+| --- | --- | --- | --- | --- | --- |
+| `id` | integer | ✓ | tự sinh | PK | Mã sự kiện. |
+| `milestone_id` | integer | ✓ |  | FK → `milestones.id` | Xảy ra ở mốc nào. |
+| `event_type_id` | integer | ✓ |  | FK → `event_types.id` | Loại sự kiện. |
+| `status` | text | ✓ |  |  | API tự điền theo `event_types.valid_status`. |
+| `party_id` | integer | ✓ |  | FK → `parties.id` | Bên thực hiện (bên mua, người duyệt của bên mua, hoặc nhà cung cấp của hợp đồng). |
+| `recorded_by` | uuid |  |  | FK → `users.id` | Người bấm nút (NULL khi chưa có đăng nhập). |
+| `happened_at` | timestamp | ✓ |  |  | Lúc xảy ra, giờ Việt Nam không múi giờ; bỏ trống = bây giờ. |
+| `document_no` | text |  |  |  | Số giấy tờ; engine phát hiện nộp trùng. |
+| `resolves_event_id` | integer |  |  | FK → `events.id` | Chỉ với Đóng tranh chấp: đóng tranh chấp nào. |
+| `note` | text | ✓ | '' |  | Ghi chú. |
+| `created_at` | timestamptz | ✓ | now() |  | Lúc lưu. |
+
+**Trigger `events_guard`, `events_no_truncate`:** chỉ thêm (không sửa, không xóa, không TRUNCATE); chỉ ghi được khi hợp đồng ACTIVE.
+
+### 6.4 API kiểm thêm
+
+| API | Kiểm |
+| --- | --- |
+| `POST /contracts` | Loại hợp đồng đang bật, khuôn đủ 100%, mọi mốc đã công bố; bên mua / nhà cung cấp đúng loại và đang bật; sinh mốc: tiền = % × giá trị (lẻ dồn mốc cuối), hạn = bắt đầu + số ngày. |
+| `PATCH /contracts/:id` | Chỉ DRAFT; đổi giá trị thì chia lại tiền theo tỷ lệ; đổi ngày bắt đầu thì dời mọi hạn cùng số ngày. |
+| `POST /contracts/:id/milestones`, `PATCH`/`DELETE /milestones/:id` | Chỉ DRAFT; thêm mốc từ thư viện (đã công bố, chưa có trong hợp đồng); nhập %, lưu tiền; tự xếp lại thứ tự. |
+| `POST`/`DELETE /milestones/:id/custom-rules` | Chỉ DRAFT; chép luật đang dùng thành bản nháp riêng (`is_custom`), sửa qua `/milestone-versions`; bỏ thì quay về luật chung và xóa bản riêng. |
+| `POST /contracts/:id/activate` | Có mốc, tổng tiền = giá trị, các bên hợp lệ, luật riêng đủ (có sự kiện bắt buộc, có luật, luật cuối ELSE); khóa luật riêng cùng lúc với hợp đồng. |
+| `POST /events` | Hợp đồng ACTIVE; loại sự kiện đang bật; bên thuộc hợp đồng; Đóng tranh chấp phải trỏ tới Mở tranh chấp **cùng mốc**, không sớm hơn lúc mở, chưa bị đóng; trường này chỉ dùng cho Đóng tranh chấp. Bên ghi sai loại chứng từ **không bị chặn** (engine đánh dấu sai thẩm quyền). |
+
+## 7. Dữ liệu mẫu
+
+`pnpm db:seed` (trong `apps/api`) đọc `data/datapack/*.csv` của BTC và nạp lại từ đầu (xóa rồi nạp). Mã trong CSV (`B009`, `S021`...) chỉ dùng để nối dòng lúc nạp; DB giữ `id` tự sinh. Hiện nạp: **65 bên** (10 bên mua, 25 nhà cung cấp, 30 người phê duyệt). Thư viện mốc, loại hợp đồng, hợp đồng và sự kiện **chưa nạp** dữ liệu mẫu. Quyền `DISPUTE` trong CSV được đổi thành cả Mở tranh chấp và Đóng tranh chấp.
+
+## 8. Migration
 
 | Migration | Nội dung |
 | --- | --- |
 | `Catalogs` | `event_types` (nạp sẵn 16 loại), `parties`, `users` |
 | `MilestoneLibrary` | `milestone_library`, `milestone_versions`, `payment_rules`, trigger khóa phiên bản đã công bố |
 | `ContractTypes` | `contract_types`, `contract_type_milestones` |
+| `Contracts` | `contracts`, `milestones`, `events`, trigger khóa hợp đồng / mốc và sự kiện chỉ thêm |
 
-## 8. Lệnh thường dùng
+## 9. Lệnh thường dùng
 
 Chạy trong `apps/api`, Postgres đang chạy (`pnpm db:up` ở thư mục gốc).
 
