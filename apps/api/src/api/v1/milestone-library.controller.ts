@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { TAG } from "../../core/api-tags";
 import { VersionedDto } from "../../schemas/common.schema";
 import {
   CreateMilestoneDto,
@@ -11,7 +12,7 @@ import {
 } from "../../schemas/milestone-library.schema";
 import { MilestoneLibraryService } from "../../services/milestone-library.service";
 
-@ApiTags("milestone-library")
+@ApiTags(TAG.milestoneLibrary)
 @Controller("milestone-library")
 export class MilestoneLibraryController {
   constructor(private readonly service: MilestoneLibraryService) {}
@@ -48,7 +49,7 @@ export class MilestoneLibraryController {
   }
 }
 
-@ApiTags("milestone-library")
+@ApiTags(TAG.milestoneVersions)
 @Controller("milestone-versions")
 export class MilestoneVersionsController {
   constructor(private readonly service: MilestoneLibraryService) {}
@@ -70,26 +71,26 @@ export class MilestoneVersionsController {
   publish(@Param("id", ParseIntPipe) id: number, @Body() dto: VersionedDto) {
     return this.service.publishVersion(id, dto.version);
   }
+}
 
-  @Post(":id/rules")
+@ApiTags(TAG.paymentRules)
+@Controller()
+export class PaymentRulesController {
+  constructor(private readonly service: MilestoneLibraryService) {}
+
+  @Post("milestone-versions/:id/rules")
   @ApiOperation({ summary: "Thêm luật vào bản nháp" })
   addRule(@Param("id", ParseIntPipe) id: number, @Body() dto: CreateRuleDto) {
     return this.service.addRule(id, dto);
   }
-}
 
-@ApiTags("milestone-library")
-@Controller("payment-rules")
-export class PaymentRulesController {
-  constructor(private readonly service: MilestoneLibraryService) {}
-
-  @Patch(":id")
+  @Patch("payment-rules/:id")
   @ApiOperation({ summary: "Sửa một luật của bản nháp (gửi kèm version)" })
   update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateRuleDto) {
     return this.service.updateRule(id, dto);
   }
 
-  @Delete(":id")
+  @Delete("payment-rules/:id")
   @HttpCode(204)
   @ApiOperation({ summary: "Xóa một luật của bản nháp (?version=)" })
   remove(@Param("id", ParseIntPipe) id: number, @Query() { version }: VersionedDto) {

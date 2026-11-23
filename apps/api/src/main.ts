@@ -6,6 +6,7 @@ import type { NestExpressApplication } from "@nestjs/platform-express";
 import path from "node:path";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { AppModule } from "./app.module";
+import { API_TAGS } from "./core/api-tags";
 import { AllExceptionsFilter } from "./utils/exception.filter";
 import { ResponseInterceptor } from "./utils/response.interceptor";
 
@@ -20,12 +21,13 @@ async function bootstrap(): Promise<void> {
   app.useGlobalFilters(new AllExceptionsFilter());
 
   // API docs (like FastAPI's /docs): http://127.0.0.1:<API_PORT>/api/docs
-  const docs = new DocumentBuilder()
+  const builder = new DocumentBuilder()
     .setTitle("Contract Smart API")
-    .setDescription("Hợp đồng, mốc thanh toán, sự kiện và quyết định giải ngân")
+    .setDescription("Luồng: 1. danh mục, các bên → 2. thư viện mốc (phiên bản, luật) → 3. loại hợp đồng (khuôn) → 4. hợp đồng (mốc, sự kiện)")
     .setVersion("0.1.0")
-    .addBearerAuth()
-    .build();
+    .addBearerAuth();
+  for (const [name, description] of API_TAGS) builder.addTag(name, description);
+  const docs = builder.build();
   SwaggerModule.setup("api/docs", app, () => SwaggerModule.createDocument(app, docs), {
     customSiteTitle: "Contract Smart API",
     swaggerOptions: {
@@ -35,7 +37,6 @@ async function bootstrap(): Promise<void> {
       filter: true, // search box for endpoints
       displayRequestDuration: true,
       persistAuthorization: true, // keep the JWT after a page reload
-      tagsSorter: "alpha",
     },
   });
   await app.listen(Number(process.env.API_PORT ?? 3000), "127.0.0.1");

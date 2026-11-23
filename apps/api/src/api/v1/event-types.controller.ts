@@ -1,9 +1,10 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { TAG } from "../../core/api-tags";
 import { CreateEventTypeDto, EventTypeListQuery, UpdateEventTypeDto } from "../../schemas/event-type.schema";
 import { EventTypeService } from "../../services/event-type.service";
 
-@ApiTags("event-types")
+@ApiTags(TAG.eventTypes)
 @Controller("event-types")
 export class EventTypesController {
   constructor(private readonly service: EventTypeService) {}

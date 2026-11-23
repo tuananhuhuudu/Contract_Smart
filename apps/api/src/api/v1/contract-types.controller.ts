@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, ParseIntPipe, Patch, Post, Query } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { TAG } from "../../core/api-tags";
 import { VersionedDto } from "../../schemas/common.schema";
 import {
   AddTemplateMilestoneDto,
@@ -10,7 +11,7 @@ import {
 } from "../../schemas/contract-type.schema";
 import { ContractTypeService } from "../../services/contract-type.service";
 
-@ApiTags("contract-types")
+@ApiTags(TAG.contractTypes)
 @Controller("contract-types")
 export class ContractTypesController {
   constructor(private readonly service: ContractTypeService) {}
@@ -39,26 +40,26 @@ export class ContractTypesController {
     const { version, ...changes } = dto;
     return this.service.update(id, version, changes);
   }
+}
 
-  @Post(":id/milestones")
+@ApiTags(TAG.templateMilestones)
+@Controller()
+export class ContractTypeMilestonesController {
+  constructor(private readonly service: ContractTypeService) {}
+
+  @Post("contract-types/:id/milestones")
   @ApiOperation({ summary: "Ghép một mốc từ thư viện vào khuôn (%, hạn); mốc phải đã công bố, tổng không quá 100%" })
   addMilestone(@Param("id", ParseIntPipe) id: number, @Body() dto: AddTemplateMilestoneDto) {
     return this.service.addMilestone(id, dto);
   }
-}
 
-@ApiTags("contract-types")
-@Controller("contract-type-milestones")
-export class ContractTypeMilestonesController {
-  constructor(private readonly service: ContractTypeService) {}
-
-  @Patch(":id")
+  @Patch("contract-type-milestones/:id")
   @ApiOperation({ summary: "Sửa % hoặc hạn của một mốc trong khuôn (gửi kèm version)" })
   update(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateTemplateMilestoneDto) {
     return this.service.updateMilestone(id, dto);
   }
 
-  @Delete(":id")
+  @Delete("contract-type-milestones/:id")
   @ApiOperation({ summary: "Bỏ một mốc khỏi khuôn (?version=); hợp đồng đã tạo không bị ảnh hưởng" })
   remove(@Param("id", ParseIntPipe) id: number, @Query() { version }: VersionedDto) {
     return this.service.removeMilestone(id, version);
