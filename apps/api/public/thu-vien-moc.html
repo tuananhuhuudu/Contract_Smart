@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thư viện mốc thanh toán</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --line:#dde1e7; --text:#1c2430; --muted:#5d6878; --accent:#2f6fb3;
+          --ok:#1f7a5a; --err:#b3261e; --warn:#9a6700; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); }
+  header { background:var(--card); border-bottom:1px solid var(--line); padding:12px 20px; }
+  header h1 { font-size:17px; margin:0; }
+  .banner { background:#fdf3dc; color:var(--warn); padding:6px 20px; font-size:13px; border-bottom:1px solid #f0dca8; }
+  nav { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+  nav button { font:inherit; border:1px solid var(--line); background:#fff; border-radius:16px; padding:4px 14px; color:var(--muted); cursor:pointer; }
+  nav button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .layout { display:grid; grid-template-columns:minmax(0, 1fr) 400px; gap:16px; padding:16px 20px; max-width:1560px; margin:auto; }
+  @media (max-width:1100px) { .layout { grid-template-columns:1fr; } }
+  .split { display:grid; grid-template-columns:340px minmax(0, 1fr); gap:14px; }
+  @media (max-width:900px) { .split { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin-bottom:14px; }
+  .card h2 { font-size:16px; margin:0 0 6px; } .card h3 { font-size:14px; margin:16px 0 8px; }
+  .hint { color:var(--muted); font-size:13px; margin:0 0 10px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  th { background:#f1f3f6; font-weight:600; white-space:nowrap; }
+  td input, td select { width:100%; padding:4px 6px; }
+  .scroll { overflow-x:auto; }
+  .list { display:flex; flex-direction:column; gap:6px; max-height:65vh; overflow:auto; }
+  .item { border:1px solid var(--line); border-radius:6px; padding:8px 10px; cursor:pointer; background:#fff; }
+  .item:hover { background:#f3f7fc; } .item.sel { border-color:var(--accent); background:#e8f0fa; }
+  .item b { display:block; font-size:13px; } .item small { color:var(--muted); font-size:12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:10px 14px; align-items:end; }
+  label { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--muted); }
+  input, select { font:inherit; font-size:13px; padding:6px 8px; border:1px solid #c5ccd6; border-radius:6px; background:#fff; color:var(--text); }
+  .checks { display:flex; flex-wrap:wrap; gap:4px 14px; }
+  .checks label { flex-direction:row; align-items:center; gap:4px; color:var(--text); font-size:13px; }
+  button.btn { font:inherit; padding:7px 14px; border-radius:6px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; }
+  button.btn.sec { background:#fff; color:var(--accent); } button.btn.small { padding:2px 8px; font-size:12px; }
+  button.btn:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .auto { font-family:ui-monospace, Menlo, monospace; font-size:12px; background:#eef4fb; color:var(--accent); padding:1px 6px; border-radius:4px; }
+  .pill { display:inline-block; font-size:11px; padding:0 6px; border-radius:8px; background:#eef1f5; color:var(--muted); margin-left:4px; }
+  .pill.new { background:#e3f3ec; color:var(--ok); } .pill.edit { background:#fdf3dc; color:var(--warn); }
+  .msg { padding:8px 12px; border-radius:6px; margin:10px 0; font-size:13px; }
+  .msg.ok { background:#e3f3ec; color:var(--ok); } .msg.bad { background:#fbe7e6; color:var(--err); }
+  .total { font-weight:600; } .total.ok { color:var(--ok); } .total.bad { color:var(--err); }
+  .db { position:sticky; top:12px; max-height:calc(100vh - 24px); overflow:auto; }
+  .db .tbl { margin-bottom:12px; } .db .tbl b { font-family:ui-monospace, Menlo, monospace; font-size:12px; }
+  .db pre { margin:4px 0 0; font:11.5px/1.45 ui-monospace, Menlo, monospace; background:#f6f8fa; border:1px solid var(--line); border-radius:6px; padding:6px 8px; white-space:pre-wrap; word-break:break-word; }
+  .db .none { color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Thư viện mốc thanh toán → Loại hợp đồng → Hợp đồng</h1>
+  <nav id="tabs">
+    <button data-tab="lib" class="on">1. Thư viện mốc</button>
+    <button data-tab="types">2. Loại hợp đồng</button>
+    <button data-tab="contract">3. Tạo hợp đồng</button>
+  </nav>
+</header>
+<div class="banner">Bản xem trước theo thiết kế mới (mốc dùng chung, mỗi mốc có sẵn luật). Đọc dữ liệu thật từ API nhưng <b>không ghi gì vào DB</b>. Khung bên phải cho thấy sẽ ghi gì nếu làm thật.</div>
+
+<div class="layout">
+<main>
+  <!-- 1. Library -->
+  <section data-page="lib">
+    <div class="split">
+      <div class="card">
+        <h2>Thư viện mốc</h2>
+        <p class="hint">Mỗi mốc gồm: sự kiện bắt buộc, có cần hóa đơn, có phạt trễ, và các luật. Tạo một lần, nhiều loại hợp đồng dùng chung.</p>
+        <div class="row" style="margin-bottom:8px"><input id="libNewName" placeholder="Tên mốc mới, ví dụ Nộp báo cáo" style="flex:1"><button class="btn small" id="libAdd">+ Thêm</button></div>
+        <div id="libMsg"></div>
+        <div class="list" id="libList"></div>
+      </div>
+      <div class="card" id="libDetail"></div>
+    </div>
+  </section>
+
+  <!-- 2. Contract types -->
+  <section data-page="types" hidden>
+    <div class="split">
+      <div class="card">
+        <h2>Loại hợp đồng</h2>
+        <p class="hint">Một loại hợp đồng = chọn các mốc từ thư viện, kèm % tiền và hạn.</p>
+        <div class="row" style="margin-bottom:8px"><input id="typeNewName" placeholder="Tên loại mới, ví dụ Tư vấn" style="flex:1"><button class="btn small" id="typeAdd">+ Thêm</button></div>
+        <div id="typeMsg"></div>
+        <div class="list" id="typeList"></div>
+      </div>
+      <div class="card" id="typeDetail"></div>
+    </div>
+  </section>
+
+  <!-- 3. Contract -->
+  <section data-page="contract" hidden>
+    <div class="card">
+      <h2>Tạo hợp đồng</h2>
+      <p class="hint">Chọn loại hợp đồng: các mốc được sinh theo khuôn của loại đó, mỗi mốc mang theo sự kiện bắt buộc và luật từ thư viện.</p>
+      <div class="grid">
+        <label>Loại hợp đồng<select id="cType"></select></label>
+        <label>Tên hợp đồng<input id="cTitle" value="Hợp đồng thử"></label>
+        <label>Bên mua<select id="cBuyer"></select></label>
+        <label>Nhà cung cấp<select id="cSupplier"></select></label>
+        <label>Giá trị (triệu VND)<input id="cValue" value="1000.00"></label>
+        <label>Ngày ký<input id="cSign" type="date"></label>
+        <label>Ngày bắt đầu<input id="cStart" type="date"></label>
+        <label>Ngày kết thúc<input id="cEnd" type="date"></label>
+      </div>
+      <h3>Các mốc sẽ được sinh</h3>
+      <div class="scroll"><table id="cMs"></table></div>
+      <div id="cMsg"></div>
+      <div class="row" style="justify-content:flex-end; margin-top:10px"><button class="btn" id="cCreate">Tạo hợp đồng</button><button class="btn" id="cActivate" disabled>Kích hoạt</button></div>
+    </div>
+  </section>
+</main>
+
+<aside class="card db">
+  <h2 style="font-size:15px">Sẽ ghi vào DB</h2>
+  <p class="hint"><b>+</b> thêm dòng · <b>~</b> sửa dòng. Chỉ liệt kê phần bạn đã thay đổi trên trang.</p>
+  <div id="db"></div>
+</aside>
+</div>
+
+<script>
+const API = "/api/v1";
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const get = async (p) => { const r = await fetch(API + p); const j = await r.json(); if (!r.ok) throw new Error(j.message); return j.data; };
+const toCode = (v) => v.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/đ/gi, "D").toUpperCase()
+  .replace(/[\s-]+/g, "_").replace(/[^A-Z0-9_]/g, "").replace(/^[^A-Z]+/, "");
+const msg = (el, kind, text) => { $(el).innerHTML = text ? `<div class="msg ${kind}">${text}</div>` : ""; };
+const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5);
+const addDays = (iso, n) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const DECISIONS = ["RELEASE", "HOLD", "REJECT", "PENALTY"];
+const GROUPS = ["BLOCKING", "VALIDATION", "PENALTY", "RELEASE", "FALLBACK"];
+
+const S = { lib: [], types: [], eventTypes: [], parties: [], version: null, selLib: null, selType: null, contract: null };
+// Each library milestone: { code, name, events, invoice, penalty, rules, origin: "db" | "new", edited }
+// Each contract type: { code, name, stages: [{ lib, pct, offset }], origin, edited }
+
+// ---------- Tabs ----------
+document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll("[data-page]").forEach((s) => s.hidden = s.dataset.page !== b.dataset.tab);
+  if (b.dataset.tab === "contract") renderContractPage();
+});
+
+// ---------- 1. Library ----------
+const libOf = (code) => S.lib.find((m) => m.code === code);
+const flag = (x) => x.origin === "new" ? `<span class="pill new">mới</span>` : x.edited ? `<span class="pill edit">đã sửa</span>` : "";
+function renderLibList() {
+  $("#libList").innerHTML = S.lib.map((m) => `<div class="item ${m.code === S.selLib ? "sel" : ""}" data-code="${esc(m.code)}">
+    <b>${esc(m.name)} ${flag(m)}</b><small>${esc(m.code)} · ${m.rules.length} luật · ${esc(m.events.join(", ") || "chưa chọn sự kiện")}</small></div>`).join("");
+  $("#libList").querySelectorAll(".item").forEach((el) => el.onclick = () => { S.selLib = el.dataset.code; renderLibList(); renderLibDetail(); });
+}
+function renderLibDetail() {
+  const m = libOf(S.selLib);
+  if (!m) { $("#libDetail").innerHTML = `<p class="hint">Chọn một mốc bên trái để xem và sửa.</p>`; return; }
+  const usedBy = S.types.filter((t) => t.stages.some((s) => s.lib === m.code)).map((t) => t.name);
+  const evidence = S.eventTypes.filter((t) => t.active && t.category === "EVIDENCE");
+  const sel = (f, values, v) => `<select data-f="${f}">${values.map((x) => `<option ${x === v ? "selected" : ""}>${x}</option>`).join("")}</select>`;
+  $("#libDetail").innerHTML = `
+    <h2>${esc(m.name)} ${flag(m)}</h2>
+    <p class="hint">Mã <span class="auto">${esc(m.code)}</span> · Đang dùng trong: ${usedBy.length ? esc(usedBy.join(", ")) : "chưa loại hợp đồng nào"}</p>
+    <div class="grid">
+      <label>Tên mốc<input id="ldName" value="${esc(m.name)}"></label>
+      <label>Cần hóa đơn<select id="ldInvoice"><option value="false">Không</option><option value="true" ${m.invoice ? "selected" : ""}>Có</option></select></label>
+      <label>Phạt trễ hạn<select id="ldPenalty"><option value="false">Không</option><option value="true" ${m.penalty ? "selected" : ""}>Có</option></select></label>
+      <label style="grid-column:1/-1">Sự kiện bắt buộc (đủ các sự kiện này mới được trả tiền)
+        <div class="checks">${evidence.map((t) => `<label><input type="checkbox" value="${esc(t.code)}" ${m.events.includes(t.code) ? "checked" : ""}>${esc(t.name)}</label>`).join("")}</div></label>
+    </div>
+    <div class="row" style="justify-content:space-between; margin-top:14px">
+      <h3 style="margin:0">Luật của mốc (xét từ ưu tiên nhỏ đến lớn, luật cuối phải là ELSE)</h3>
+      <span>${m.origin === "new" ? `<select id="ldCopy"><option value="">Lấy luật từ mốc…</option>${S.lib.filter((x) => x.origin === "db").map((x) => `<option value="${esc(x.code)}">${esc(x.name)}</option>`).join("")}</select>` : ""}
+      <button class="btn sec small" id="ldAddRule">+ Thêm luật</button></span>
+    </div>
+    <div class="scroll"><table id="ldRules"><tr><th>Ưu tiên</th><th>Nhóm</th><th>Nếu</th><th>Thì</th><th>Mã lý do</th><th>Tiền trả</th><th>Tiền phạt</th><th>Mô tả</th><th></th></tr>
+      ${m.rules.map((r, i) => `<tr data-i="${i}"><td style="width:70px"><input data-f="priority" type="number" value="${r.priority}"></td><td>${sel("ruleGroup", GROUPS, r.ruleGroup)}</td>
+        <td style="min-width:190px"><input data-f="conditionExpression" value="${esc(r.conditionExpression)}"></td><td>${sel("decision", DECISIONS, r.decision)}</td>
+        <td><input data-f="reasonCode" value="${esc(r.reasonCode)}"></td><td><input data-f="payableAmountFormula" value="${esc(r.payableAmountFormula)}"></td>
+        <td><input data-f="penaltyAmountFormula" value="${esc(r.penaltyAmountFormula)}"></td><td style="min-width:200px"><input data-f="ruleDescriptionVi" value="${esc(r.ruleDescriptionVi)}"></td>
+        <td><button class="btn sec small" data-rm="${i}">Xóa</button></td></tr>`).join("") || `<tr><td colspan="9" class="hint">Chưa có luật. Thêm luật hoặc lấy luật từ một mốc có sẵn.</td></tr>`}
+    </table></div>
+    <div id="ldCheck"></div>`;
+  const touch = () => { if (m.origin === "db") m.edited = true; renderLibList(); renderDb(); checkRules(m); };
+  $("#ldName").onchange = (e) => { m.name = e.target.value.trim() || m.name; touch(); renderLibDetail(); };
+  $("#ldInvoice").onchange = (e) => { m.invoice = e.target.value === "true"; touch(); };
+  $("#ldPenalty").onchange = (e) => { m.penalty = e.target.value === "true"; touch(); };
+  $("#libDetail").querySelectorAll(".checks input").forEach((c) => c.onchange = () => {
+    m.events = [...$("#libDetail").querySelectorAll(".checks input:checked")].map((x) => x.value); touch();
+  });
+  $("#ldRules").querySelectorAll("tr[data-i] [data-f]").forEach((input) => input.onchange = () => {
+    const r = m.rules[input.closest("tr").dataset.i]; const f = input.dataset.f;
+    r[f] = f === "priority" ? Number(input.value) : f === "reasonCode" ? (input.value = toCode(input.value)) : input.value; touch();
+  });
+  $("#ldRules").querySelectorAll("[data-rm]").forEach((b) => b.onclick = () => { m.rules.splice(Number(b.dataset.rm), 1); touch(); renderLibDetail(); });
+  $("#ldAddRule").onclick = () => {
+    m.rules.splice(Math.max(m.rules.length - 1, 0), 0, { priority: (m.rules.at(-2)?.priority ?? 0) + 5, ruleGroup: "VALIDATION", conditionExpression: "",
+      decision: "HOLD", reasonCode: "", payableAmountFormula: "0", penaltyAmountFormula: "0", ruleDescriptionVi: "" });
+    touch(); renderLibDetail();
+  };
+  if ($("#ldCopy")) $("#ldCopy").onchange = (e) => {
+    const src = libOf(e.target.value); if (!src) return;
+    m.rules = src.rules.map((r) => ({ ...r })); if (!m.events.length) { m.events = [...src.events]; m.invoice = src.invoice; m.penalty = src.penalty; }
+    touch(); renderLibDetail();
+  };
+  checkRules(m);
+}
+function ruleProblems(m) {
+  const list = [...m.rules].sort((a, b) => a.priority - b.priority), out = [];
+  if (!list.length) out.push("chưa có luật nào");
+  else if (list.at(-1).conditionExpression.trim() !== "ELSE") out.push("luật cuối (ưu tiên lớn nhất) phải là ELSE");
+  if (new Set(list.map((r) => r.priority)).size !== list.length) out.push("hai luật trùng mức ưu tiên");
+  if (list.some((r) => !r.conditionExpression.trim() || !r.reasonCode)) out.push("có luật thiếu điều kiện hoặc mã lý do");
+  if (!m.events.length) out.push("chưa chọn sự kiện bắt buộc");
+  return out;
+}
+function checkRules(m) {
+  const p = ruleProblems(m);
+  if ($("#ldCheck")) msg("#ldCheck", p.length ? "bad" : "ok", p.length ? "Mốc này chưa dùng được: " + p.map(esc).join("; ") : "Mốc này đã đủ để dùng.");
+}
+$("#libAdd").onclick = () => {
+  const name = $("#libNewName").value.trim(); const code = toCode(name);
+  if (!code) return msg("#libMsg", "bad", "Nhập tên mốc.");
+  if (libOf(code)) return msg("#libMsg", "bad", `Mã ${esc(code)} đã có trong thư viện.`);
+  S.lib.unshift({ code, name, events: [], invoice: false, penalty: false, rules: [], origin: "new" });
+  S.selLib = code; $("#libNewName").value = ""; msg("#libMsg", "ok", `Đã thêm mốc ${esc(name)} (mã ${esc(code)}). Chọn sự kiện bắt buộc và luật ở bên phải.`);
+  renderLibList(); renderLibDetail(); renderDb();
+};
+
+// ---------- 2. Contract types ----------
+const typeOf = (code) => S.types.find((t) => t.code === code);
+const totalPct = (t) => t.stages.reduce((a, s) => a + s.pct, 0);
+function renderTypeList() {
+  $("#typeList").innerHTML = S.types.map((t) => `<div class="item ${t.code === S.selType ? "sel" : ""}" data-code="${esc(t.code)}">
+    <b>${esc(t.name)} ${flag(t)}</b><small>${esc(t.code)} · ${t.stages.length} mốc · ${totalPct(t).toFixed(2)}%</small></div>`).join("");
+  $("#typeList").querySelectorAll(".item").forEach((el) => el.onclick = () => { S.selType = el.dataset.code; renderTypeList(); renderTypeDetail(); });
+}
+function renderTypeDetail() {
+  const t = typeOf(S.selType);
+  if (!t) { $("#typeDetail").innerHTML = `<p class="hint">Chọn một loại hợp đồng bên trái.</p>`; return; }
+  const total = totalPct(t), ok = Math.abs(total - 100) < 0.001;
+  $("#typeDetail").innerHTML = `
+    <h2>${esc(t.name)} ${flag(t)}</h2>
+    <p class="hint">Mã <span class="auto">${esc(t.code)}</span>${t.origin === "db" ? " · khuôn suy ra từ một hợp đồng của BTC" : ""}</p>
+    <div class="scroll"><table id="tdStages"><tr><th>#</th><th>Mốc (từ thư viện)</th><th>Sự kiện bắt buộc</th><th>Số luật</th><th style="width:90px">%</th><th style="width:110px">Hạn (+ngày)</th><th></th></tr>
+      ${t.stages.map((s, i) => { const m = libOf(s.lib); return `<tr data-i="${i}"><td>${i + 1}</td><td>${esc(m.name)} <span class="hint">(${esc(m.code)})</span></td>
+        <td>${esc(m.events.join(", "))}</td><td>${m.rules.length}</td>
+        <td><input data-f="pct" type="number" step="0.01" value="${s.pct}"></td><td><input data-f="offset" type="number" value="${s.offset}"></td>
+        <td><button class="btn sec small" data-rm="${i}">Bỏ</button></td></tr>`; }).join("") || `<tr><td colspan="7" class="hint">Chưa có mốc nào.</td></tr>`}
+    </table></div>
+    <p>Tổng: <span class="total ${ok ? "ok" : "bad"}">${total.toFixed(2)}%${ok ? " ✓ đủ" : " (phải đủ 100%)"}</span></p>
+    <h3>Thêm mốc từ thư viện</h3>
+    <div class="grid">
+      <label>Mốc<select id="tdLib">${S.lib.filter((m) => !t.stages.some((s) => s.lib === m.code)).map((m) => `<option value="${esc(m.code)}">${esc(m.name)}</option>`).join("")}</select></label>
+      <label>% thanh toán<input id="tdPct" type="number" step="0.01" value="${Math.max(0, +(100 - total).toFixed(2))}"></label>
+      <label>Hạn = ngày bắt đầu + số ngày<input id="tdOffset" type="number" value="0"></label>
+      <button class="btn" id="tdAdd">+ Thêm vào loại hợp đồng</button>
+    </div>
+    <div id="tdMsg"></div>`;
+  const touch = () => { if (t.origin === "db") t.edited = true; renderTypeList(); renderDb(); };
+  $("#tdStages").querySelectorAll("tr[data-i] [data-f]").forEach((input) => input.onchange = () => {
+    t.stages[input.closest("tr").dataset.i][input.dataset.f] = Number(input.value); touch(); renderTypeDetail();
+  });
+  $("#tdStages").querySelectorAll("[data-rm]").forEach((b) => b.onclick = () => { t.stages.splice(Number(b.dataset.rm), 1); touch(); renderTypeDetail(); });
+  $("#tdAdd").onclick = () => {
+    const lib = $("#tdLib").value, pct = Number($("#tdPct").value), m = libOf(lib);
+    if (!lib) return msg("#tdMsg", "bad", "Thư viện không còn mốc nào chưa dùng.");
+    if (!(pct > 0)) return msg("#tdMsg", "bad", "% phải lớn hơn 0.");
+    if (total + pct > 100.0001) return msg("#tdMsg", "bad", `Tổng sẽ vượt 100% (${(total + pct).toFixed(2)}%).`);
+    const p = ruleProblems(m);
+    if (p.length) return msg("#tdMsg", "bad", `Mốc "${esc(m.name)}" chưa dùng được: ${p.map(esc).join("; ")}. Sửa ở tab Thư viện mốc.`);
+    t.stages.push({ lib, pct, offset: Number($("#tdOffset").value) || 0 });
+    t.stages.sort((a, b) => a.offset - b.offset); touch(); renderTypeDetail();
+  };
+}
+$("#typeAdd").onclick = () => {
+  const name = $("#typeNewName").value.trim(), code = toCode(name);
+  if (!code) return msg("#typeMsg", "bad", "Nhập tên loại hợp đồng.");
+  if (typeOf(code)) return msg("#typeMsg", "bad", `Mã ${esc(code)} đã có.`);
+  S.types.unshift({ code, name, stages: [], origin: "new" }); S.selType = code; $("#typeNewName").value = "";
+  msg("#typeMsg", "ok", `Đã thêm loại ${esc(name)}. Chọn mốc từ thư viện ở bên phải.`);
+  renderTypeList(); renderTypeDetail(); renderDb();
+};
+
+// ---------- 3. Contract ----------
+function split(value, pcts) {
+  const cents = Math.round(Number(value) * 100);
+  const parts = pcts.map((p) => Math.floor(cents * Math.round(p * 100) / 10000));
+  parts[parts.length - 1] += cents - parts.reduce((a, b) => a + b, 0);
+  return parts.map((c) => (c / 100).toFixed(2));
+}
+function renderContractPage() {
+  const keep = $("#cType").value;
+  $("#cType").innerHTML = S.types.map((t) => `<option value="${esc(t.code)}">${esc(t.name)} (${esc(t.code)})</option>`).join("");
+  if (keep && typeOf(keep)) $("#cType").value = keep;
+  renderPlanned();
+}
+function planned() {
+  const t = typeOf($("#cType").value); if (!t || !t.stages.length) return [];
+  const amounts = split($("#cValue").value || 0, t.stages.map((s) => s.pct));
+  return t.stages.map((s, i) => { const m = libOf(s.lib); return { seq: i + 1, name: m.name, lib: m.code, due: addDays($("#cStart").value, s.offset), amount: amounts[i], events: m.events, rules: m.rules.length }; });
+}
+function renderPlanned() {
+  const t = typeOf($("#cType").value), ms = planned();
+  $("#cMs").innerHTML = `<tr><th>#</th><th>Mã</th><th>Mốc</th><th>Hạn</th><th>Tiền (triệu)</th><th>Sự kiện bắt buộc</th><th>Luật (từ thư viện)</th></tr>` +
+    (ms.map((m) => `<tr><td>${m.seq}</td><td>${S.contract ? esc(S.contract.ms[m.seq - 1]) : "MS????"}</td><td>${esc(m.name)}</td><td>${m.due}</td><td>${m.amount}</td>
+      <td>${esc(m.events.join(", "))}</td><td><span class="auto">${esc(m.lib)}</span> · ${m.rules} luật</td></tr>`).join("") || `<tr><td colspan="7" class="hint">Loại này chưa có mốc.</td></tr>`);
+  if (!S.contract) msg("#cMsg", t && Math.abs(totalPct(t) - 100) > 0.001 ? "bad" : "", t && Math.abs(totalPct(t) - 100) > 0.001 ? `Khuôn của ${esc(t.name)} mới có ${totalPct(t).toFixed(2)}%, phải đủ 100% mới tạo được hợp đồng.` : "");
+  renderDb();
+}
+["#cType", "#cValue", "#cStart", "#cTitle", "#cBuyer", "#cSupplier"].forEach((id) => $(id).addEventListener("input", () => { if (!S.contract) renderPlanned(); }));
+$("#cCreate").onclick = () => {
+  const t = typeOf($("#cType").value);
+  if (!t || Math.abs(totalPct(t) - 100) > 0.001) return msg("#cMsg", "bad", "Khuôn mốc của loại này chưa đủ 100%.");
+  if (!($("#cSign").value <= $("#cStart").value && $("#cStart").value <= $("#cEnd").value)) return msg("#cMsg", "bad", "Ngày phải theo thứ tự: ký ≤ bắt đầu ≤ kết thúc.");
+  S.contract = { id: "CT0101", type: t.code, lifecycle: "DRAFT", ms: t.stages.map((_, i) => `MS${String(406 + i).padStart(4, "0")}`) };
+  $("#cCreate").disabled = true; $("#cActivate").disabled = false;
+  msg("#cMsg", "ok", `Đã tạo ${S.contract.id} (DRAFT) với ${t.stages.length} mốc. Bấm Kích hoạt để bắt đầu ghi sự kiện.`); renderPlanned();
+};
+$("#cActivate").onclick = () => { S.contract.lifecycle = "ACTIVE"; $("#cActivate").disabled = true; msg("#cMsg", "ok", `${S.contract.id} đã ACTIVE: các bên ghi được sự kiện cho từng mốc.`); renderDb(); };
+
+// ---------- DB panel ----------
+function renderDb() {
+  const block = (name, lines) => `<div class="tbl"><b>${name}</b>${lines.length ? `<pre>${lines.map(esc).join("\n")}</pre>` : `<div class="none">— không đổi —</div>`}</div>`;
+  const libChanged = S.lib.filter((m) => m.origin === "new" || m.edited);
+  const typesChanged = S.types.filter((t) => t.origin === "new" || t.edited);
+  const sign = (x) => x.origin === "new" ? "+" : "~";
+  const out = [];
+  out.push(block("milestone_library (thư viện mốc)", libChanged.map((m) => `${sign(m)} ${m.code} | ${m.name} | {${m.events.join(",")}} | hóa đơn ${m.invoice ? "có" : "không"} | phạt ${m.penalty ? "có" : "không"}`)));
+  out.push(block(`payment_rules (phiên bản nháp)`, libChanged.flatMap((m) => m.rules.map((r) => `+ ${m.code} | ${r.priority} | ${r.conditionExpression || "?"} → ${r.decision}`))));
+  out.push(block("contract_types", typesChanged.map((t) => `${sign(t)} ${t.code} | ${t.name}`)));
+  out.push(block("contract_type_stages", typesChanged.flatMap((t) => t.stages.map((s, i) => `${sign(t)} ${t.code} #${i + 1} | ${s.lib} | ${s.pct.toFixed(2)}% | +${s.offset}d`))));
+  out.push(block("contracts", S.contract ? [`+ ${S.contract.id} | ${$("#cTitle").value} | ${S.contract.type} | ${$("#cBuyer").value} → ${$("#cSupplier").value} | ${$("#cValue").value} tr | ${S.contract.lifecycle}`] : []));
+  out.push(block("milestones", S.contract ? planned().map((m) => `+ ${S.contract.ms[m.seq - 1]} | ${S.contract.id} #${m.seq} | ${m.name} | ${m.due} | ${m.amount} | ${m.lib}`) : []));
+  $("#db").innerHTML = out.join("");
+}
+
+// ---------- Start: build the library and the 4 types from the real data ----------
+(async () => {
+  try {
+    const [scopes, eventTypes, parties, types, version] = await Promise.all([
+      get("/rule-scopes?pageSize=100"), get("/event-types?pageSize=100"), get("/parties?pageSize=100"), get("/contract-types?pageSize=100"), get("/rule-versions/current"),
+    ]);
+    S.eventTypes = eventTypes; S.parties = parties; S.version = version;
+    const rules = await get(`/payment-rules?ruleVersionId=${version.id}&sortBy=priority&order=asc&pageSize=100`);
+    const rules2 = rules.length === 100 ? await get(`/payment-rules?ruleVersionId=${version.id}&sortBy=priority&order=asc&pageSize=100&page=2`) : [];
+    const allRules = [...rules, ...rules2];
+    // Milestone settings and the stage template of each type come from one real contract of that type.
+    const settings = {};
+    for (const t of types) {
+      const [c] = await get(`/contracts?contractType=${t.code}&pageSize=1`);
+      const ms = c ? await get(`/contracts/${c.contractId}/milestones`) : [];
+      ms.forEach((m) => settings[m.releaseRuleCode] ??= m);
+      S.types.push({ code: t.code, name: t.name, origin: "db", stages: ms.map((m) => ({
+        lib: m.releaseRuleCode, pct: +(Number(m.plannedPaymentVndMn) * 100 / Number(c.contractValueVndMn)).toFixed(2), offset: daysBetween(c.startDate, m.dueDate) })) });
+    }
+    S.lib = scopes.sort((a, b) => a.releaseRuleCode.localeCompare(b.releaseRuleCode)).map((s) => ({
+      code: s.releaseRuleCode, name: s.name, origin: "db",
+      events: settings[s.releaseRuleCode]?.requiredEventTypes ?? [], invoice: !!settings[s.releaseRuleCode]?.invoiceRequired, penalty: !!settings[s.releaseRuleCode]?.latePenaltyApplicable,
+      rules: allRules.filter((r) => r.releaseRuleCode === s.releaseRuleCode).map((r) => ({ priority: r.priority, ruleGroup: r.ruleGroup, conditionExpression: r.conditionExpression,
+        decision: r.decision, reasonCode: r.reasonCode, payableAmountFormula: r.payableAmountFormula, penaltyAmountFormula: r.penaltyAmountFormula, ruleDescriptionVi: r.ruleDescriptionVi })),
+    }));
+  } catch (e) { msg("#libMsg", "bad", "Không đọc được dữ liệu từ API: " + esc(e.message)); return; }
+  const opt = (type) => S.parties.filter((p) => p.partyType === type).map((p) => `<option value="${esc(p.partyId)}">${esc(p.partyId)} · ${esc(p.partyName)}</option>`).join("");
+  $("#cBuyer").innerHTML = opt("BUYER"); $("#cSupplier").innerHTML = opt("SUPPLIER");
+  const today = new Date().toISOString().slice(0, 10);
+  $("#cSign").value = today; $("#cStart").value = addDays(today, 7); $("#cEnd").value = addDays(today, 187);
+  S.selLib = S.lib[0]?.code; S.selType = S.types[0]?.code;
+  renderLibList(); renderLibDetail(); renderTypeList(); renderTypeDetail(); renderDb();
+})();
+</script>
+</body>
+</html>

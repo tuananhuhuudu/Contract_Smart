@@ -132,7 +132,7 @@
         <table id="tTable"></table>
         <h3>Thêm loại hợp đồng</h3>
         <form class="grid" id="tForm">
-          <label>Mã<input name="code" placeholder="CONSULTING" required></label>
+          <label>Mã<input name="code" data-code placeholder="CONSULTING" required></label>
           <label>Tên<input name="name" placeholder="Tư vấn" required></label>
           <button class="btn">Thêm</button>
         </form>
@@ -142,10 +142,10 @@
         <h2>Bộ luật (rule scope) của loại đang chọn</h2>
         <table id="sTable"></table>
         <h3>Thêm bộ luật</h3>
-        <p class="hint">Mã dạng <code>R_XXX_STD:LOAI_MOC</code>; phần sau dấu <code>:</code> phải bằng loại mốc.</p>
+        <p class="hint">Mã chỉ gồm CHỮ HOA không dấu, số và <code>_</code> (trang tự đổi khi gõ). Dạng <code>R_XXX_STD:LOAI_MOC</code>; phần sau dấu <code>:</code> phải bằng loại mốc (tự điền).</p>
         <form class="grid" id="sForm">
-          <label>Mã bộ luật<input name="releaseRuleCode" placeholder="R_CONSULT_STD:REPORT" required></label>
-          <label>Loại mốc<input name="milestoneType" placeholder="REPORT" required></label>
+          <label>Mã bộ luật<input name="releaseRuleCode" data-code="scope" placeholder="R_CONSULT_STD:REPORT" required></label>
+          <label>Loại mốc<input name="milestoneType" data-code placeholder="REPORT" required></label>
           <label>Tên<input name="name" placeholder="Nộp báo cáo" required></label>
           <button class="btn">Thêm</button>
         </form>
@@ -202,7 +202,7 @@
         <label>Nhóm<select name="ruleGroup"><option>BLOCKING</option><option>VALIDATION</option><option>PENALTY</option><option>RELEASE</option><option>FALLBACK</option></select></label>
         <label>Điều kiện<input name="conditionExpression" placeholder="open_dispute == TRUE" required></label>
         <label>Quyết định<select name="decision"><option>HOLD</option><option>RELEASE</option><option>REJECT</option><option>PENALTY</option></select></label>
-        <label>Mã lý do<input name="reasonCode" placeholder="OPEN_DISPUTE" required></label>
+        <label>Mã lý do<input name="reasonCode" data-code placeholder="OPEN_DISPUTE" required></label>
         <label>Công thức tiền trả<input name="payableAmountFormula" value="0"></label>
         <label>Công thức tiền phạt<input name="penaltyAmountFormula" value="0"></label>
         <label style="grid-column:1/-1">Mô tả<input name="ruleDescriptionVi" required></label>
@@ -220,7 +220,7 @@
         <table id="etTable"></table>
         <h3>Thêm loại sự kiện</h3>
         <form class="grid" id="etForm">
-          <label>Mã<input name="code" placeholder="SITE_SURVEY" required></label>
+          <label>Mã<input name="code" data-code placeholder="SITE_SURVEY" required></label>
           <label>Tên<input name="name" placeholder="Khảo sát hiện trường" required></label>
           <label>Nhóm<select name="category"><option>EVIDENCE</option><option>APPROVAL</option><option>REJECTION</option><option>DISPUTE_OPEN</option><option>DISPUTE_RESOLVE</option><option>OTHER</option></select></label>
           <label>Bên ghi (chỉ EVIDENCE)<select name="actorSide"><option value="">—</option><option>BUYER</option><option>SUPPLIER</option></select></label>
@@ -279,6 +279,15 @@ const all = async (path) => (await api("GET", path + (path.includes("?") ? "&" :
 const STATUS_OF = { EVIDENCE: "CONFIRMED", APPROVAL: "APPROVED", REJECTION: "REJECTED", DISPUTE_OPEN: "OPEN", DISPUTE_RESOLVE: "RESOLVED", OTHER: "CONFIRMED" };
 const state = { page: 1, parties: [], eventTypes: [], types: [], contract: null, milestone: null, events: [], typeCode: null, scopes: [] };
 const partyName = (id) => { const p = state.parties.find((x) => x.partyId === id); return p ? `${id} · ${p.partyName}` : id; };
+
+// ---------- Code fields: upper case, no accents, spaces become _ ----------
+const toCode = (v, scope) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/gi, "D").toUpperCase()
+  .replace(/[\s-]+/g, "_").replace(scope ? /[^A-Z0-9_:]/g : /[^A-Z0-9_]/g, "");
+document.querySelectorAll("[data-code]").forEach((input) => input.addEventListener("input", () => {
+  input.value = toCode(input.value, input.dataset.code === "scope");
+  // A rule scope code ends with its milestone type: fill that field from the part after ":".
+  if (input.dataset.code === "scope" && input.value.includes(":")) input.form.milestoneType.value = input.value.split(":")[1];
+}));
 
 // ---------- Tabs ----------
 document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => {

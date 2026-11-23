@@ -1,0 +1,711 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luồng thư viện mốc</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --line:#dde1e7; --text:#1c2430; --muted:#5d6878; --accent:#2f6fb3;
+          --ok:#1f7a5a; --err:#b3261e; --warn:#9a6700; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); }
+  header { background:var(--card); border-bottom:1px solid var(--line); padding:12px 20px; }
+  header h1 { font-size:17px; margin:0; }
+  .banner { background:#fdf3dc; color:var(--warn); padding:6px 20px; font-size:13px; border-bottom:1px solid #f0dca8; }
+  nav { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+  nav button { font:inherit; border:1px solid var(--line); background:#fff; border-radius:16px; padding:4px 14px; color:var(--muted); cursor:pointer; }
+  nav button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .layout { display:grid; grid-template-columns:minmax(0, 1fr) 420px; gap:16px; padding:16px 20px; max-width:1600px; margin:auto; }
+  @media (max-width:1150px) { .layout { grid-template-columns:1fr; } }
+  .split { display:grid; grid-template-columns:320px minmax(0, 1fr); gap:14px; }
+  @media (max-width:900px) { .split { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin-bottom:14px; }
+  .card h2 { font-size:16px; margin:0 0 6px; } .card h3 { font-size:14px; margin:16px 0 8px; }
+  .hint { color:var(--muted); font-size:13px; margin:0 0 10px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  th { background:#f1f3f6; font-weight:600; white-space:nowrap; }
+  td input, td select { width:100%; padding:4px 6px; }
+  .scroll { overflow-x:auto; }
+  .list { display:flex; flex-direction:column; gap:6px; max-height:62vh; overflow:auto; }
+  .item { border:1px solid var(--line); border-radius:6px; padding:8px 10px; cursor:pointer; background:#fff; }
+  .item:hover { background:#f3f7fc; } .item.sel { border-color:var(--accent); background:#e8f0fa; }
+  .item b { display:block; font-size:13px; } .item small { color:var(--muted); font-size:12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(190px, 1fr)); gap:10px 14px; align-items:end; }
+  label { display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--muted); }
+  input, select { font:inherit; font-size:13px; padding:6px 8px; border:1px solid #c5ccd6; border-radius:6px; background:#fff; color:var(--text); }
+  input:disabled, select:disabled { background:#f3f4f6; color:var(--muted); }
+  .checks { display:flex; flex-wrap:wrap; gap:4px 14px; }
+  .checks label { flex-direction:row; align-items:center; gap:4px; color:var(--text); font-size:13px; }
+  button.btn { font:inherit; padding:7px 14px; border-radius:6px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; }
+  button.btn.sec { background:#fff; color:var(--accent); } button.btn.small { padding:2px 8px; font-size:12px; }
+  button.btn:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .tag { display:inline-block; padding:1px 7px; border-radius:10px; font-size:12px; background:#eef1f5; }
+  .tag.PUBLISHED, .tag.ACTIVE { background:#e3f3ec; color:var(--ok); } .tag.DRAFT { background:#fdf3dc; color:var(--warn); }
+  .tag.RETIRED { background:#eef1f5; color:var(--muted); }
+  .vtabs { display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 10px; }
+  .vtabs button { font:inherit; font-size:12px; border:1px solid var(--line); background:#fff; border-radius:6px; padding:3px 10px; cursor:pointer; }
+  .vtabs button.on { border-color:var(--accent); background:#e8f0fa; }
+  .cond .clause { display:flex; gap:4px; align-items:center; margin-bottom:4px; flex-wrap:wrap; }
+  .cond .clause select, .cond .clause input { width:auto; min-width:0; }
+  .cond .clause .and { font-size:11px; font-weight:600; color:var(--muted); width:28px; }
+  .cond .sentence { font-size:12px; color:var(--ok); margin-top:2px; }
+  .cond .tools { display:flex; gap:10px; align-items:center; font-size:12px; margin-top:2px; }
+  .cond .tools label { flex-direction:row; align-items:center; gap:4px; color:var(--text); font-size:12px; }
+  .msg { padding:8px 12px; border-radius:6px; margin:10px 0; font-size:13px; }
+  .msg.ok { background:#e3f3ec; color:var(--ok); } .msg.bad { background:#fbe7e6; color:var(--err); } .msg.info { background:#eef4fb; color:var(--accent); }
+  .total { font-weight:600; } .total.ok { color:var(--ok); } .total.bad { color:var(--err); }
+  .db { position:sticky; top:12px; max-height:calc(100vh - 24px); overflow:auto; }
+  .db details { margin-bottom:8px; } .db summary { cursor:pointer; font:600 12.5px ui-monospace, Menlo, monospace; }
+  .db summary span { color:var(--muted); font-weight:400; }
+  .db pre { margin:4px 0 0; font:11.5px/1.45 ui-monospace, Menlo, monospace; background:#f6f8fa; border:1px solid var(--line); border-radius:6px; padding:6px 8px; white-space:pre-wrap; word-break:break-word; max-height:260px; overflow:auto; }
+  .db mark { background:#fff2b8; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Thư viện mốc (có phiên bản) → Loại hợp đồng → Hợp đồng</h1>
+  <nav id="tabs">
+    <button data-tab="lib" class="on">1. Thư viện mốc</button>
+    <button data-tab="types">2. Loại hợp đồng</button>
+    <button data-tab="contracts">3. Hợp đồng</button>
+  </nav>
+</header>
+<div class="banner">Bản xem trước theo <code>docs/thiet-ke-thu-vien-moc.dbml</code>. Dữ liệu ban đầu đọc từ DB hiện tại; mọi thao tác chỉ nằm trên trang, <b>không ghi vào DB</b>. Khung bên phải là các bảng của thiết kế mới (bản rút gọn 11 bảng), dòng vừa đổi được tô vàng.</div>
+
+<div class="layout">
+<main>
+  <section data-page="lib">
+    <div class="split">
+      <div class="card">
+        <h2>Thư viện mốc</h2>
+        <div class="row" style="margin-bottom:8px"><input id="libNewName" placeholder="Tên mốc mới, ví dụ Nộp báo cáo" style="flex:1"><button class="btn small" id="libAdd">+ Thêm</button></div>
+        <div id="libMsg"></div>
+        <div class="list" id="libList"></div>
+      </div>
+      <div class="card" id="libDetail"></div>
+    </div>
+  </section>
+
+  <section data-page="types" hidden>
+    <div class="split">
+      <div class="card">
+        <h2>Loại hợp đồng</h2>
+        <div class="row" style="margin-bottom:8px"><input id="typeNewName" placeholder="Tên loại mới, ví dụ Tư vấn" style="flex:1"><button class="btn small" id="typeAdd">+ Thêm</button></div>
+        <div id="typeMsg"></div>
+        <div class="list" id="typeList"></div>
+      </div>
+      <div class="card" id="typeDetail"></div>
+    </div>
+  </section>
+
+  <section data-page="contracts" hidden>
+    <div class="card">
+      <h2>Tạo hợp đồng</h2>
+      <div class="grid">
+        <label>Loại hợp đồng<select id="cType"></select></label>
+        <label>Tên hợp đồng<input id="cTitle" value="Hợp đồng thử"></label>
+        <label>Bên mua<select id="cBuyer"></select></label>
+        <label>Nhà cung cấp<select id="cSupplier"></select></label>
+        <label>Giá trị (triệu VND)<input id="cValue" value="1000.00"></label>
+        <label>Ngày bắt đầu<input id="cStart" type="date"></label>
+        <button class="btn" id="cCreate">Tạo hợp đồng</button>
+      </div>
+      <div id="cMsg"></div>
+    </div>
+    <div class="card">
+      <h2>Hợp đồng đã tạo trên trang này</h2>
+      <p class="hint">Hợp đồng mới ở DRAFT (đang đàm phán): sửa được %, hạn, và bấm <b>Dùng luật riêng</b> để có luật khác cho riêng khách hàng này. Bấm <b>Ký / kích hoạt</b> thì khóa lại. Mỗi mốc thật nhớ <b>phiên bản mốc</b> lúc tạo hợp đồng. Thử: tạo hợp đồng → sang tab 1 tạo và công bố phiên bản mới của một mốc → quay lại đây: hợp đồng cũ vẫn giữ phiên bản cũ, hợp đồng tạo sau dùng phiên bản mới.</p>
+      <div id="cList"></div>
+    </div>
+  </section>
+</main>
+
+<aside class="card db">
+  <h2 style="font-size:15px">Các bảng của thiết kế mới</h2>
+  <p class="hint">Bấm tên bảng để mở. Dòng tô vàng là dòng vừa thêm hoặc sửa.</p>
+  <div id="db"></div>
+</aside>
+</div>
+
+<script>
+const API = "/api/v1";
+const $ = (s) => document.querySelector(s);
+const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const get = async (p) => { const r = await fetch(API + p); const j = await r.json(); if (!r.ok) throw new Error(j.message); return j.data; };
+const msg = (el, kind, text) => { $(el).innerHTML = text ? `<div class="msg ${kind}">${text}</div>` : ""; };
+const tag = (v) => `<span class="tag ${v}">${v}</span>`;
+const addDays = (iso, n) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5);
+const DECISIONS = ["RELEASE", "HOLD", "REJECT", "PENALTY"];
+const DECISION_VI = { RELEASE: "Trả tiền", HOLD: "Giữ tiền", REJECT: "Từ chối", PENALTY: "Trả có trừ phạt" };
+// Variables the engine can evaluate (its rule_language.json), with Vietnamese labels for the pickers.
+const VARS = [
+  ["open_dispute", "Có tranh chấp đang mở", "bool"], ["valid_rejection_event_count", "Số lần từ chối hợp lệ", "num"],
+  ["unauthorized_required_event_count", "Số chứng từ sai thẩm quyền", "num"], ["required_event_completion_rate", "Tỷ lệ đủ chứng từ (0 đến 1)", "num"],
+  ["all_required_conditions_met", "Đủ mọi điều kiện bắt buộc", "bool"], ["approval_required", "Mốc cần phê duyệt", "bool"],
+  ["valid_approval_count", "Số vai trò đã duyệt", "num"], ["required_approval_quorum", "Số vai trò cần duyệt", "num"],
+  ["invoice_required", "Mốc cần hóa đơn", "bool"], ["late_penalty_applicable", "Mốc có phạt trễ", "bool"],
+  ["hold_on_open_dispute", "Giữ tiền khi có tranh chấp", "bool"], ["auto_release_allowed", "Cho phép tự giải ngân", "bool"],
+  ["days_late_after_grace", "Số ngày trễ sau ân hạn", "num"], ["grace_period_days", "Số ngày ân hạn", "num"],
+  ["actual_completion_date", "Ngày hoàn thành thực tế", "date"], ["due_date", "Ngày đến hạn", "date"],
+  ["due_date + grace_period_days", "Ngày đến hạn + số ngày ân hạn", "date"],
+  ["planned_payment_vnd_mn", "Tiền của mốc (triệu)", "num"], ["contract_value_vnd_mn", "Giá trị hợp đồng (triệu)", "num"],
+  ["payment_percent", "% thanh toán của mốc", "num"], ["penalty_rate_pct_per_day", "Tỷ lệ phạt mỗi ngày (%)", "num"], ["max_penalty_pct", "Trần phạt (%)", "num"],
+];
+const varOf = (name) => VARS.find((v) => v[0] === name);
+const OPS = [["==", "bằng"], ["!=", "khác"], [">", "lớn hơn"], [">=", "lớn hơn hoặc bằng"], ["<", "nhỏ hơn"], ["<=", "nhỏ hơn hoặc bằng"]];
+// Reason codes the engine knows (policy/case4_btc.json) and the milestone status each one leads to.
+const REASONS = [
+  ["OPEN_DISPUTE", "Đang tranh chấp", "Đang giữ"], ["REJECTION_PRESENT", "Bên mua từ chối", "Bị từ chối"],
+  ["UNAUTHORIZED_EVENT", "Chứng từ sai thẩm quyền", "Đang giữ"], ["MISSING_REQUIRED_EVENT", "Thiếu sự kiện bắt buộc", "Chờ chứng từ"],
+  ["APPROVAL_QUORUM_NOT_MET", "Chưa đủ người duyệt", "Chờ duyệt"], ["LATE_COMPLETION", "Hoàn thành trễ hạn", "Trả có trừ phạt"],
+  ["ALL_CONDITIONS_MET", "Đủ mọi điều kiện", "Đủ điều kiện trả"], ["UNRESOLVED_CONDITION", "Chưa xác định được", "Đang giữ"],
+];
+
+// Condition text <-> list of clauses { v: variable, op, val }. The engine language only joins clauses with AND.
+function parseCondition(text) {
+  if (text.trim() === "ELSE") return "ELSE";
+  return text.split(" AND ").filter((x) => x.trim()).map((part) => {
+    const m = part.trim().match(/^([a-z_]+)\s*(==|!=|>=|<=|>|<)\s*(.+)$/);
+    return m ? { v: m[1], op: m[2], val: m[3].trim() } : { v: "", op: "==", val: part.trim() };
+  });
+}
+const buildCondition = (clauses) => clauses === "ELSE" ? "ELSE" : clauses.map((c) => `${c.v} ${c.op} ${c.val}`).join(" AND ");
+function valueLabel(val) {
+  if (val === "TRUE") return "đúng"; if (val === "FALSE") return "sai";
+  return varOf(val)?.[1].toLowerCase() ?? val;
+}
+function sentence(clauses) {
+  if (clauses === "ELSE") return "Mọi trường hợp còn lại";
+  return "Nếu " + clauses.map((c) => `${(varOf(c.v)?.[1] ?? c.v).toLowerCase()} ${OPS.find((o) => o[0] === c.op)?.[1] ?? c.op} ${valueLabel(c.val)}`).join(" và ");
+}
+function clauseHtml(c, i, dis) {
+  const type = varOf(c.v)?.[2] ?? "num";
+  const ops = type === "bool" ? OPS.slice(0, 2) : OPS;
+  // Value picker: TRUE/FALSE for yes/no variables; a typed number or another variable of the same kind otherwise.
+  const same = VARS.filter((x) => x[2] === type && x[0] !== c.v);
+  const isNum = /^-?\d+(\.\d+)?$/.test(c.val);
+  const kind = type === "bool" ? c.val : isNum ? "num" : varOf(c.val) ? "var:" + c.val : "num";
+  const valueSelect = type === "bool"
+    ? `<select data-c="val" ${dis}><option value="TRUE" ${c.val === "TRUE" ? "selected" : ""}>đúng</option><option value="FALSE" ${c.val === "FALSE" ? "selected" : ""}>sai</option></select>`
+    : `<select data-c="kind" ${dis}>${type === "num" ? `<option value="num" ${kind === "num" ? "selected" : ""}>số…</option>` : ""}
+        ${same.map((x) => `<option value="var:${x[0]}" ${kind === "var:" + x[0] ? "selected" : ""}>${esc(x[1])}</option>`).join("")}</select>
+       ${kind === "num" ? `<input data-c="num" type="number" step="any" style="width:80px" value="${isNum ? c.val : 0}" ${dis}>` : ""}`;
+  return `<div class="clause" data-k="${i}"><span class="and">${i ? "VÀ" : "NẾU"}</span>
+    <select data-c="v" ${dis}>${VARS.filter((x) => !x[0].includes(" ")).map((x) => `<option value="${x[0]}" ${x[0] === c.v ? "selected" : ""}>${esc(x[1])}</option>`).join("")}</select>
+    <select data-c="op" ${dis}>${ops.map((o) => `<option value="${esc(o[0])}" ${o[0] === c.op ? "selected" : ""}>${o[1]}</option>`).join("")}</select>
+    ${valueSelect}${dis ? "" : ` <button class="btn sec small" data-c="rm" title="Bỏ điều kiện">×</button>`}</div>`;
+}
+function condEditor(r, dis) {
+  const clauses = parseCondition(r.condition);
+  return `<div class="cond">${clauses === "ELSE" ? "" : clauses.map((c, i) => clauseHtml(c, i, dis)).join("")}
+    ${dis ? "" : `<div class="tools">${clauses === "ELSE" ? "" : `<button class="btn sec small" data-c="add">+ VÀ điều kiện</button>`}
+      <label><input type="checkbox" data-c="else" ${clauses === "ELSE" ? "checked" : ""}>Còn lại (ELSE)</label></div>`}
+    <div class="sentence">${esc(sentence(clauses))}</div></div>`;
+}
+// Reads the clause pickers of one rule row back into its condition text.
+function readCondition(row, action, k) {
+  if (row.querySelector('[data-c="else"]')?.checked) return "ELSE";
+  let clauses = [...row.querySelectorAll(".clause")].map((el) => {
+    const v = el.querySelector('[data-c="v"]').value, type = varOf(v)?.[2];
+    const op = el.querySelector('[data-c="op"]').value;
+    let val;
+    if (type === "bool") val = el.querySelector('[data-c="val"]')?.value ?? "TRUE";
+    else {
+      const fallback = type === "date" ? "var:" + VARS.find((x) => x[2] === "date" && x[0] !== v)[0] : "num";
+      const kind = el.querySelector('[data-c="kind"]')?.value ?? fallback;
+      val = kind.startsWith("var:") ? kind.slice(4) : (el.querySelector('[data-c="num"]')?.value || "0");
+    }
+    return { v, op: type === "bool" && !["==", "!="].includes(op) ? "==" : op, val };
+  });
+  if (action === "add") clauses.push({ v: "open_dispute", op: "==", val: "TRUE" });
+  if (action === "rm") clauses.splice(k, 1);
+  return clauses.length ? buildCondition(clauses) : "ELSE";
+}
+// Short Vietnamese names given to the 8 kinds of rules found in the current data.
+const VI_NAME = {
+  OPEN_DISPUTE: "Đang tranh chấp thì giữ tiền", REJECTION_PRESENT: "Bên mua từ chối thì không trả",
+  UNAUTHORIZED_EVENT: "Sự kiện do bên không có quyền ghi thì giữ tiền", MISSING_REQUIRED_EVENT: "Thiếu sự kiện bắt buộc thì giữ tiền",
+  APPROVAL_QUORUM_NOT_MET: "Chưa đủ người duyệt thì giữ tiền", LATE_COMPLETION: "Xong trễ hạn thì trừ tiền phạt",
+  ALL_CONDITIONS_MET: "Đủ mọi điều kiện thì trả tiền", UNRESOLVED_CONDITION: "Còn lại: giữ tiền để kiểm tra",
+};
+
+// ---------- In-memory tables of the new design (ids generated like a sequence) ----------
+const T = {
+  event_types: [], parties: [], milestone_library: [], milestone_versions: [], payment_rules: [], events: [],
+  contract_types: [], contract_type_milestones: [], contracts: [], milestones: [],
+};
+const seq = {};
+const nextId = (t) => (seq[t] = (seq[t] ?? 0) + 1);
+const changed = new Set(); // "table:id" of rows touched on this page
+const insert = (t, row, mark = true) => { const r = { id: nextId(t), ...row }; T[t].push(r); if (mark) changed.add(`${t}:${r.id}`); return r; };
+const touch = (t, row) => changed.add(`${t}:${row.id}`);
+const byId = (t, id) => T[t].find((r) => r.id === id);
+
+const versionsOf = (mid) => T.milestone_versions.filter((v) => v.milestone_id === mid && !v.is_custom).sort((a, b) => a.version_no - b.version_no);
+const publishedOf = (mid) => versionsOf(mid).find((v) => v.status === "PUBLISHED");
+const draftOf = (mid) => versionsOf(mid).find((v) => v.status === "DRAFT");
+const eventsOf = (vid) => byId("milestone_versions", vid)?.required_event_type_ids ?? [];
+// A custom version is used by exactly one milestone; its contract is found through that milestone.
+const ownerOf = (v) => T.milestones.find((m) => m.milestone_version_id === v.id)?.contract_id;
+// Milestones keep no name: it comes from the library through their version.
+const msName = (m) => byId("milestone_library", byId("milestone_versions", m.milestone_version_id).milestone_id).name;
+const rulesOf = (vid) => T.payment_rules.filter((r) => r.milestone_version_id === vid).sort((a, b) => a.priority - b.priority);
+const evName = (id) => byId("event_types", id)?.name ?? id;
+
+const UI = { selLib: null, selVersion: null, selType: null, selMs: null };
+
+// ---------- Tabs ----------
+document.querySelectorAll("#tabs button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x === b));
+  document.querySelectorAll("[data-page]").forEach((s) => s.hidden = s.dataset.page !== b.dataset.tab);
+  if (b.dataset.tab === "types") renderTypeDetail();
+  if (b.dataset.tab === "contracts") renderContracts();
+});
+
+// ---------- 1. Library ----------
+function renderLibList() {
+  $("#libList").innerHTML = T.milestone_library.map((m) => {
+    const p = publishedOf(m.id), d = draftOf(m.id);
+    return `<div class="item ${m.id === UI.selLib ? "sel" : ""}" data-id="${m.id}"><b>${esc(m.name)}</b>
+      <small>id ${m.id} · ${p ? `đang dùng v${p.version_no}` : "chưa công bố"}${d ? ` · có nháp v${d.version_no}` : ""}</small></div>`;
+  }).join("");
+  $("#libList").querySelectorAll(".item").forEach((el) => el.onclick = () => {
+    UI.selLib = Number(el.dataset.id); UI.selVersion = (draftOf(UI.selLib) ?? publishedOf(UI.selLib) ?? versionsOf(UI.selLib).at(-1))?.id;
+    renderLibList(); renderLibDetail();
+  });
+}
+function problems(v) {
+  const list = rulesOf(v.id), out = [];
+  if (!eventsOf(v.id).length) out.push("chưa chọn sự kiện bắt buộc");
+  if (!list.length) out.push("chưa có luật nào");
+  else if (list.at(-1).condition.trim() !== "ELSE") out.push("luật cuối (ưu tiên lớn nhất) phải là ELSE");
+  if (new Set(list.map((r) => r.priority)).size !== list.length) out.push("hai luật trùng mức ưu tiên");
+  if (list.some((r) => !r.condition.trim() || !r.reason_code.trim())) out.push("có luật thiếu điều kiện hoặc mã lý do");
+  return out;
+}
+function renderLibDetail() {
+  const m = byId("milestone_library", UI.selLib);
+  if (!m) { $("#libDetail").innerHTML = `<p class="hint">Chọn một mốc bên trái.</p>`; return; }
+  const sel = byId("milestone_versions", UI.selVersion);
+  const v = sel && sel.milestone_id === m.id ? sel : versionsOf(m.id).at(-1);
+  const own = v?.is_custom ? ownerOf(v) : null;
+  const editable = v?.status === "DRAFT";
+  const dis = editable ? "" : "disabled";
+  const usedBy = T.contract_type_milestones.filter((x) => x.milestone_id === m.id).map((x) => byId("contract_types", x.contract_type_id).name);
+  const evidence = T.event_types.filter((e) => e.category === "EVIDENCE");
+  $("#libDetail").innerHTML = `
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">${esc(m.name)}</h2><span class="hint">milestone_library.id = ${m.id}</span></div>
+    <p class="hint">Loại hợp đồng đang dùng mốc này: ${usedBy.length ? esc(usedBy.join(", ")) : "chưa có"}</p>
+    <div class="vtabs">${versionsOf(m.id).map((x) => `<button data-v="${x.id}" class="${x.id === v?.id ? "on" : ""}">v${x.version_no} ${tag(x.status)}</button>`).join("")}
+      ${own ? `<button class="on">Riêng hợp đồng #${own} ${tag(v.status)}</button>` : ""}
+      ${own || draftOf(m.id) ? "" : `<button id="newVersion">+ Tạo phiên bản mới để sửa</button>`}</div>
+    ${v ? `
+    <p class="hint">${own ? `Luật riêng của hợp đồng #${own}, chép từ luật chung. Sửa thoải mái khi hợp đồng còn DRAFT; khóa lại khi kích hoạt hợp đồng. Luật chung trong thư viện không bị ảnh hưởng.` : editable ? "Phiên bản nháp: sửa thoải mái, xong thì Công bố." : "Phiên bản này đã " + (v.status === "PUBLISHED" ? "công bố" : "ngừng dùng") + " nên bị khóa. Muốn sửa thì tạo phiên bản mới."}</p>
+    <div class="grid">
+      <label style="grid-column:span 2">Ghi chú lần sửa (note)<input id="vNote" value="${esc(v.note ?? "")}" placeholder="Ví dụ: đổi trễ 10 thành 15 ngày" ${dis}></label>
+      <label>Phạt trễ hạn<select id="vPenalty" ${dis}><option value="false">Không</option><option value="true" ${v.late_penalty ? "selected" : ""}>Có</option></select></label>
+      <label style="grid-column:1/-1">Sự kiện bắt buộc (required_event_type_ids)
+        <div class="checks">${evidence.map((e) => `<label><input type="checkbox" value="${e.id}" ${eventsOf(v.id).includes(e.id) ? "checked" : ""} ${dis}>${esc(e.name)}</label>`).join("")}</div></label>
+    </div>
+    <div class="row" style="justify-content:space-between; margin-top:14px"><h3 style="margin:0">Luật (payment_rules)</h3>
+      <span>${editable && !rulesOf(v.id).length ? `<select id="vCopy"><option value="">Lấy luật từ mốc…</option>${T.milestone_library.filter((x) => publishedOf(x.id)).map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select>` : ""}
+      ${editable ? `<button class="btn sec small" id="vAddRule">+ Thêm luật</button>` : ""}</span></div>
+    <div class="scroll"><table id="vRules"><tr><th>Ưu tiên</th><th>Tên luật</th><th>Nếu</th><th>Thì</th><th>Mã lý do</th><th>Tiền trả</th><th>Tiền phạt</th>${editable ? "<th></th>" : ""}</tr>
+      ${rulesOf(v.id).map((r) => `<tr data-id="${r.id}"><td style="width:70px"><input data-f="priority" type="number" value="${r.priority}" ${dis}></td>
+        <td style="min-width:230px"><input data-f="name" value="${esc(r.name)}" ${dis}></td>
+        <td style="min-width:460px">${condEditor(r, dis)}</td>
+        <td><select data-f="decision" ${dis}>${DECISIONS.map((d) => `<option value="${d}" ${d === r.decision ? "selected" : ""}>${DECISION_VI[d]}</option>`).join("")}</select></td>
+        <td style="min-width:170px"><select data-f="reason_code" ${dis}>${REASONS.some((x) => x[0] === r.reason_code) ? "" : `<option value="${esc(r.reason_code)}" selected>${esc(r.reason_code || "— chọn lý do —")}</option>`}
+          ${REASONS.map((x) => `<option value="${x[0]}" ${x[0] === r.reason_code ? "selected" : ""}>${esc(x[1])} → ${esc(x[2])}</option>`).join("")}</select></td><td><input data-f="payable_formula" value="${esc(r.payable_formula)}" ${dis}></td>
+        <td><input data-f="penalty_formula" value="${esc(r.penalty_formula)}" ${dis}></td>
+        ${editable ? `<td><button class="btn sec small" data-rm="${r.id}">Xóa</button></td>` : ""}</tr>`).join("") || `<tr><td colspan="8" class="hint">Chưa có luật.</td></tr>`}
+    </table></div>
+    ${own ? `<div class="row" style="justify-content:flex-end; margin-top:12px"><button class="btn" id="vBack">‹ Xong, quay lại hợp đồng #${own}</button></div>`
+      : editable ? `<div class="row" style="justify-content:flex-end; margin-top:12px"><button class="btn" id="vPublish">Công bố v${v.version_no}</button></div>` : ""}
+    <div id="vMsg"></div>` : `<p class="hint">Mốc chưa có phiên bản.</p>`}`;
+
+  $("#libDetail").querySelectorAll(".vtabs [data-v]").forEach((b) => b.onclick = () => { UI.selVersion = Number(b.dataset.v); renderLibDetail(); });
+  if ($("#newVersion")) $("#newVersion").onclick = () => {
+    const base = publishedOf(m.id) ?? versionsOf(m.id).at(-1);
+    const nv = insert("milestone_versions", { milestone_id: m.id, version_no: (versionsOf(m.id).at(-1)?.version_no ?? 0) + 1, status: "DRAFT",
+      is_custom: false, required_event_type_ids: base ? [...eventsOf(base.id)] : [], late_penalty: base?.late_penalty ?? false, note: "", published_at: null });
+    if (base) {
+      rulesOf(base.id).forEach(({ id, ...r }) => insert("payment_rules", { ...r, milestone_version_id: nv.id }));
+    }
+    UI.selVersion = nv.id; refresh();
+  };
+  if ($("#vBack")) $("#vBack").onclick = () => document.querySelector('#tabs [data-tab="contracts"]').click();
+  if (!v || !editable) return;
+  $("#vNote").onchange = (e) => { v.note = e.target.value; touch("milestone_versions", v); renderDb(); };
+  $("#vPenalty").onchange = (e) => { v.late_penalty = e.target.value === "true"; touch("milestone_versions", v); renderDb(); };
+  $("#libDetail").querySelectorAll(".checks input").forEach((c) => c.onchange = () => {
+    const eid = Number(c.value);
+    v.required_event_type_ids = c.checked ? [...v.required_event_type_ids, eid].sort((a, b) => a - b) : v.required_event_type_ids.filter((x) => x !== eid);
+    touch("milestone_versions", v);
+    renderDb();
+  });
+  $("#vRules").querySelectorAll("tr[data-id] [data-f]").forEach((input) => input.onchange = () => {
+    const r = byId("payment_rules", Number(input.closest("tr").dataset.id));
+    r[input.dataset.f] = input.dataset.f === "priority" ? Number(input.value) : input.value; touch("payment_rules", r); renderDb();
+  });
+  $("#vRules").querySelectorAll("[data-rm]").forEach((b) => b.onclick = () => { T.payment_rules = T.payment_rules.filter((r) => r.id !== Number(b.dataset.rm)); refresh(); });
+  // Condition pickers: any change rebuilds the condition text of that rule.
+  $("#vRules").querySelectorAll("[data-c]").forEach((el) => {
+    const handler = () => {
+      const tr = el.closest("tr"), r = byId("payment_rules", Number(tr.dataset.id));
+      const k = Number(el.closest(".clause")?.dataset.k);
+      if (el.dataset.c === "else" && !el.checked) r.condition = "open_dispute == TRUE";
+      else if (el.dataset.c === "v") { const cl = el.closest(".clause"); cl.querySelectorAll('[data-c="kind"],[data-c="num"],[data-c="val"]').forEach((x) => x.remove()); r.condition = readCondition(tr); }
+      else r.condition = readCondition(tr, el.dataset.c, k);
+      touch("payment_rules", r); renderLibDetail(); renderDb();
+    };
+    if (el.tagName === "BUTTON") el.onclick = handler; else el.onchange = handler;
+  });
+  $("#vAddRule").onclick = () => {
+    const list = rulesOf(v.id);
+    insert("payment_rules", { milestone_version_id: v.id, priority: (list.at(-2)?.priority ?? list.at(-1)?.priority ?? 0) + 5, name: "Luật mới", condition: "days_late_after_grace > 10", decision: "HOLD", reason_code: "", payable_formula: "0", penalty_formula: "0" });
+    refresh();
+  };
+  if ($("#vCopy")) $("#vCopy").onchange = (e) => {
+    const src = publishedOf(Number(e.target.value)); if (!src) return;
+    rulesOf(src.id).forEach(({ id, ...r }) => insert("payment_rules", { ...r, milestone_version_id: v.id }));
+    if (!v.required_event_type_ids.length) { v.required_event_type_ids = [...src.required_event_type_ids]; v.late_penalty = src.late_penalty; }
+    refresh();
+  };
+  if ($("#vPublish")) $("#vPublish").onclick = () => {
+    const p = problems(v);
+    if (p.length) return msg("#vMsg", "bad", "Chưa công bố được: " + p.map(esc).join("; "));
+    const old = publishedOf(m.id);
+    if (old) { old.status = "RETIRED"; touch("milestone_versions", old); }
+    v.status = "PUBLISHED"; v.published_at = new Date().toISOString().slice(0, 16).replace("T", " "); touch("milestone_versions", v);
+    refresh(); msg("#vMsg", "ok", `Đã công bố v${v.version_no}.${old ? ` v${old.version_no} chuyển sang RETIRED; hợp đồng đã tạo vẫn giữ v${old.version_no}.` : ""} Hợp đồng tạo từ giờ dùng v${v.version_no}.`);
+  };
+}
+$("#libAdd").onclick = () => {
+  const name = $("#libNewName").value.trim();
+  if (!name) return msg("#libMsg", "bad", "Nhập tên mốc.");
+  if (T.milestone_library.some((m) => m.name.toLowerCase() === name.toLowerCase())) return msg("#libMsg", "bad", "Tên mốc đã có.");
+  const m = insert("milestone_library", { name, active: true });
+  const v = insert("milestone_versions", { milestone_id: m.id, is_custom: false, version_no: 1, status: "DRAFT", required_event_type_ids: [], late_penalty: false, note: "", published_at: null });
+  UI.selLib = m.id; UI.selVersion = v.id; $("#libNewName").value = "";
+  msg("#libMsg", "ok", `Đã thêm mốc "${esc(name)}" (id ${m.id}) với phiên bản nháp v1.`); refresh();
+};
+
+// ---------- 2. Contract types ----------
+const stagesOf = (tid) => T.contract_type_milestones.filter((s) => s.contract_type_id === tid).sort((a, b) => a.position - b.position);
+const totalOf = (tid) => stagesOf(tid).reduce((a, s) => a + Number(s.payment_percent), 0);
+function renderTypeList() {
+  $("#typeList").innerHTML = T.contract_types.map((t) => `<div class="item ${t.id === UI.selType ? "sel" : ""}" data-id="${t.id}"><b>${esc(t.name)}</b>
+    <small>id ${t.id} · ${stagesOf(t.id).length} mốc · ${totalOf(t.id).toFixed(2)}%</small></div>`).join("");
+  $("#typeList").querySelectorAll(".item").forEach((el) => el.onclick = () => { UI.selType = Number(el.dataset.id); renderTypeList(); renderTypeDetail(); });
+}
+function renumber(tid) { stagesOf(tid).sort((a, b) => a.due_after_days - b.due_after_days).forEach((s, i) => { if (s.position !== i + 1) { s.position = i + 1; touch("contract_type_milestones", s); } }); }
+function renderTypeDetail() {
+  const t = byId("contract_types", UI.selType);
+  if (!t) { $("#typeDetail").innerHTML = `<p class="hint">Chọn một loại hợp đồng.</p>`; return; }
+  const total = totalOf(t.id), ok = Math.abs(total - 100) < 0.001;
+  const usable = T.milestone_library.filter((m) => publishedOf(m.id) && !stagesOf(t.id).some((s) => s.milestone_id === m.id));
+  $("#typeDetail").innerHTML = `
+    <div class="row" style="justify-content:space-between"><h2 style="margin:0">${esc(t.name)}</h2><span class="hint">contract_types.id = ${t.id}</span></div>
+    <div class="scroll" style="margin-top:10px"><table id="tdStages"><tr><th>#</th><th>Mốc (thư viện)</th><th>Phiên bản đang dùng</th><th style="width:90px">%</th><th style="width:110px">Hạn (+ngày)</th><th></th></tr>
+      ${stagesOf(t.id).map((s) => { const m = byId("milestone_library", s.milestone_id), p = publishedOf(m.id); return `<tr data-id="${s.id}"><td>${s.position}</td>
+        <td>${esc(m.name)} <span class="hint">(id ${m.id})</span></td><td>${p ? `v${p.version_no} · ${rulesOf(p.id).length} luật` : "chưa công bố"}</td>
+        <td><input data-f="payment_percent" type="number" step="0.01" value="${s.payment_percent}"></td><td><input data-f="due_after_days" type="number" value="${s.due_after_days}"></td>
+        <td><button class="btn sec small" data-rm="${s.id}">Bỏ</button></td></tr>`; }).join("") || `<tr><td colspan="6" class="hint">Chưa có mốc.</td></tr>`}
+    </table></div>
+    <p>Tổng: <span class="total ${ok ? "ok" : "bad"}">${total.toFixed(2)}%${ok ? " ✓ đủ" : " (phải đủ 100%)"}</span></p>
+    <h3>Thêm mốc từ thư viện</h3>
+    <p class="hint">Chỉ chọn được mốc đã có phiên bản công bố.</p>
+    <div class="grid">
+      <label>Mốc<select id="tdLib">${usable.map((m) => `<option value="${m.id}">${esc(m.name)}</option>`).join("")}</select></label>
+      <label>% thanh toán<input id="tdPct" type="number" step="0.01" value="${Math.max(0, +(100 - total).toFixed(2))}"></label>
+      <label>Hạn = ngày bắt đầu + số ngày<input id="tdDays" type="number" value="0"></label>
+      <button class="btn" id="tdAdd">+ Thêm</button>
+    </div><div id="tdMsg"></div>`;
+  $("#tdStages").querySelectorAll("tr[data-id] [data-f]").forEach((input) => input.onchange = () => {
+    const s = byId("contract_type_milestones", Number(input.closest("tr").dataset.id));
+    s[input.dataset.f] = input.dataset.f === "payment_percent" ? Number(input.value).toFixed(2) : Number(input.value); touch("contract_type_milestones", s);
+    renumber(t.id); renderTypeList(); renderTypeDetail(); renderDb();
+  });
+  $("#tdStages").querySelectorAll("[data-rm]").forEach((b) => b.onclick = () => {
+    T.contract_type_milestones = T.contract_type_milestones.filter((s) => s.id !== Number(b.dataset.rm)); renumber(t.id); renderTypeList(); renderTypeDetail(); renderDb();
+  });
+  $("#tdAdd").onclick = () => {
+    const mid = Number($("#tdLib").value), pct = Number($("#tdPct").value);
+    if (!mid) return msg("#tdMsg", "bad", "Không còn mốc nào (đã công bố) để thêm.");
+    if (!(pct > 0)) return msg("#tdMsg", "bad", "% phải lớn hơn 0.");
+    if (total + pct > 100.0001) return msg("#tdMsg", "bad", `Tổng sẽ vượt 100% (${(total + pct).toFixed(2)}%).`);
+    insert("contract_type_milestones", { contract_type_id: t.id, position: 99, milestone_id: mid, payment_percent: pct.toFixed(2), due_after_days: Number($("#tdDays").value) || 0 });
+    renumber(t.id); renderTypeList(); renderTypeDetail(); renderDb();
+  };
+}
+$("#typeAdd").onclick = () => {
+  const name = $("#typeNewName").value.trim();
+  if (!name) return msg("#typeMsg", "bad", "Nhập tên loại hợp đồng.");
+  const t = insert("contract_types", { name, active: true }); UI.selType = t.id; $("#typeNewName").value = "";
+  msg("#typeMsg", "ok", `Đã thêm loại "${esc(name)}" (id ${t.id}).`); renderTypeList(); renderTypeDetail(); renderDb();
+};
+
+// ---------- 3. Contracts ----------
+function split(value, pcts) {
+  const cents = Math.round(Number(value) * 100);
+  const parts = pcts.map((p) => Math.floor(cents * Math.round(Number(p) * 100) / 10000));
+  // The rounding remainder goes to the last milestone only when the percents add up to exactly 100.
+  const hundredths = pcts.reduce((a, p) => a + Math.round(Number(p) * 100), 0);
+  if (hundredths === 10000) parts[parts.length - 1] += cents - parts.reduce((a, b) => a + b, 0);
+  return parts.map((c) => (c / 100).toFixed(2));
+}
+function renderContracts() {
+  const keep = $("#cType").value;
+  $("#cType").innerHTML = T.contract_types.map((t) => `<option value="${t.id}">${esc(t.name)} (${totalOf(t.id).toFixed(0)}%)</option>`).join("");
+  if (keep) $("#cType").value = keep;
+  const mine = T.contracts.filter((c) => changed.has(`contracts:${c.id}`));
+  $("#cList").innerHTML = mine.length ? mine.map((c) => {
+    const ms = T.milestones.filter((m) => m.contract_id === c.id), draft = c.status === "DRAFT";
+    const total = ms.reduce((a, m) => a + Number(m.pct), 0), ok = Math.abs(total - 100) < 0.001;
+    return `<div class="card" style="background:#fafbfc" data-contract="${c.id}">
+      <div class="row" style="justify-content:space-between"><h3 style="margin:0">#${c.id} · ${esc(c.title)} · ${esc(byId("contract_types", c.contract_type_id).name)} · ${c.value_vnd_mn} tr ${tag(c.status)}</h3>
+        ${draft ? `<button class="btn" data-activate="${c.id}">Ký / kích hoạt</button>` : ""}</div>
+      <p class="hint">${draft ? "Đang đàm phán: sửa được %, hạn và luật của từng mốc cho riêng hợp đồng này." : "Đã kích hoạt: mọi thứ bị khóa, engine chấm theo đúng luật đã gắn."}</p>
+      <div class="scroll"><table><tr><th>milestones.id</th><th>#</th><th>Mốc</th><th style="width:90px">%</th><th style="width:150px">Hạn</th><th>Tiền</th><th>Luật đang gắn</th><th>Sự kiện bắt buộc</th><th>Số luật</th><th></th></tr>
+      ${ms.map((m) => { const v = byId("milestone_versions", m.milestone_version_id);
+        const label = v.is_custom ? `<b>Riêng HĐ #${c.id}</b> ${tag(v.status)}` : `v${v.version_no} chung ${tag(v.status)}`;
+        return `<tr data-ms="${m.id}"><td>${m.id}</td><td>${m.position}</td><td>${esc(msName(m))}</td>
+          <td>${draft ? `<input data-m="pct" type="number" step="0.01" value="${m.pct}">` : m.pct}</td>
+          <td>${draft ? `<input data-m="due_on" type="date" value="${m.due_on}">` : m.due_on}</td><td>${m.amount_vnd_mn}</td>
+          <td>${label}</td><td>${esc(eventsOf(v.id).map(evName).join(", "))}</td><td>${rulesOf(v.id).length}</td>
+          ${draft ? `<td style="white-space:nowrap">${v.is_custom
+            ? `<button class="btn sec small" data-edit="${m.id}">Sửa luật riêng</button> <button class="btn sec small" data-shared="${m.id}">Về luật chung</button>`
+            : `<button class="btn sec small" data-own="${m.id}">Dùng luật riêng</button>`} <button class="btn sec small" data-drop="${m.id}">Bỏ mốc</button></td>`
+            : `<td><button class="btn ${UI.selMs === m.id ? "" : "sec"} small" data-evs="${m.id}">Sự kiện (${T.events.filter((e) => e.milestone_id === m.id).length})</button></td>`}</tr>`; }).join("")}</table></div>
+      ${!draft && ms.some((m) => m.id === UI.selMs) ? eventsPanel(c, byId("milestones", UI.selMs)) : ""}
+      ${draft ? `<div class="row" style="margin-top:8px">
+        <select data-add-lib>${T.milestone_library.filter((x) => publishedOf(x.id) && !ms.some((m) => byId("milestone_versions", m.milestone_version_id).milestone_id === x.id))
+          .map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select>
+        <label style="flex-direction:row; align-items:center; gap:4px">% <input data-add-pct type="number" step="0.01" style="width:80px" value="${Math.max(0, +(100 - total).toFixed(2))}"></label>
+        <label style="flex-direction:row; align-items:center; gap:4px">hạn <input data-add-due type="date" value="${addDays(c.start_on, 30)}"></label>
+        <button class="btn sec small" data-add="${c.id}">+ Thêm mốc cho riêng hợp đồng này</button></div>` : ""}
+      <p>Tổng: <span class="total ${ok ? "ok" : "bad"}">${total.toFixed(2)}%${ok ? " ✓" : " (phải đủ 100% mới kích hoạt được)"}</span></p>
+      <div data-cmsg="${c.id}"></div></div>`;
+  }).join("") : `<p class="hint">Chưa tạo hợp đồng nào trên trang này.</p>`;
+
+  const contractOf = (el) => byId("contracts", Number(el.closest("[data-contract]").dataset.contract));
+  $("#cList").querySelectorAll("[data-evs]").forEach((b) => b.onclick = () => { UI.selMs = UI.selMs === Number(b.dataset.evs) ? null : Number(b.dataset.evs); renderContracts(); });
+  if ($("#evType")) {
+    $("#evType").onchange = () => { $("#evResolveWrap").hidden = byId("event_types", Number($("#evType").value)).category !== "DISPUTE_RESOLVE"; };
+    $("#evType").onchange();
+    $("#evAdd").onclick = () => {
+      const m = byId("milestones", UI.selMs), type = byId("event_types", Number($("#evType").value));
+      const resolves = type.category === "DISPUTE_RESOLVE" ? Number($("#evResolve").value) || null : null;
+      if (type.category === "DISPUTE_RESOLVE" && !resolves) return msg("#evMsg", "bad", "Đóng tranh chấp phải chọn tranh chấp đang mở của mốc này.");
+      const when = $("#evAt").value ? $("#evAt").value.replace("T", " ") : new Date().toISOString().slice(0, 16).replace("T", " ");
+      const e = insert("events", { milestone_id: m.id, event_type_id: type.id, status: type.valid_status, party_id: Number($("#evParty").value),
+        happened_at: when, document_no: $("#evDoc").value.trim() || null, resolves_event_id: resolves, note: $("#evNote").value.trim() });
+      renderContracts(); renderDb();
+      msg("#evMsg", "ok", `Đã ghi sự kiện #${e.id}: ${esc(type.name)}. Trạng thái máy tự điền: ${e.status}.`);
+    };
+  }
+  const msOf = (el) => byId("milestones", Number(el.closest("[data-ms]").dataset.ms));
+  const resplit = (c) => {
+    const ms = T.milestones.filter((m) => m.contract_id === c.id);
+    split(c.value_vnd_mn, ms.map((m) => m.pct)).forEach((a, i) => { ms[i].amount_vnd_mn = a; touch("milestones", ms[i]); });
+  };
+  $("#cList").querySelectorAll("[data-m]").forEach((input) => input.onchange = () => {
+    const m = msOf(input);
+    if (input.dataset.m === "pct") { m.pct = Number(input.value).toFixed(2); resplit(contractOf(input)); } else { m.due_on = input.value; renumberContract(contractOf(input)); }
+    touch("milestones", m); renderContracts(); renderDb();
+  });
+  $("#cList").querySelectorAll("[data-own]").forEach((b) => b.onclick = () => {
+    const m = msOf(b), c = contractOf(b), base = byId("milestone_versions", m.milestone_version_id);
+    const own = insert("milestone_versions", { milestone_id: base.milestone_id, version_no: 1, status: "DRAFT", is_custom: true,
+      required_event_type_ids: [...base.required_event_type_ids], late_penalty: base.late_penalty, note: `Riêng hợp đồng #${c.id}, chép từ v${base.version_no}`, published_at: null });
+    rulesOf(base.id).forEach(({ id, ...r }) => insert("payment_rules", { ...r, milestone_version_id: own.id }));
+    m.milestone_version_id = own.id; touch("milestones", m);
+    openOwn(own);
+  });
+  $("#cList").querySelectorAll("[data-edit]").forEach((b) => b.onclick = () => openOwn(byId("milestone_versions", msOf(b).milestone_version_id)));
+  $("#cList").querySelectorAll("[data-shared]").forEach((b) => b.onclick = () => {
+    const m = msOf(b), own = byId("milestone_versions", m.milestone_version_id);
+    T.payment_rules = T.payment_rules.filter((r) => r.milestone_version_id !== own.id);
+    T.milestone_versions = T.milestone_versions.filter((v) => v.id !== own.id);
+    m.milestone_version_id = publishedOf(own.milestone_id).id; touch("milestones", m); renderContracts(); renderDb();
+  });
+  const renumberContract = (c) => {
+    T.milestones.filter((m) => m.contract_id === c.id).sort((a, b) => a.due_on.localeCompare(b.due_on))
+      .forEach((m, i) => { if (m.position !== i + 1) { m.position = i + 1; touch("milestones", m); } });
+    T.milestones.sort((a, b) => a.contract_id - b.contract_id || a.position - b.position);
+    resplit(c);
+  };
+  $("#cList").querySelectorAll("[data-add]").forEach((b) => b.onclick = () => {
+    const c = contractOf(b), box = b.closest("[data-contract]");
+    const lib = Number(box.querySelector("[data-add-lib]").value), pct = Number(box.querySelector("[data-add-pct]").value);
+    if (!lib) return msg(`[data-cmsg="${c.id}"]`, "bad", "Không còn mốc nào trong thư viện để thêm.");
+    if (!(pct > 0)) return msg(`[data-cmsg="${c.id}"]`, "bad", "% phải lớn hơn 0.");
+    insert("milestones", { contract_id: c.id, position: 99, pct: pct.toFixed(2),
+      milestone_version_id: publishedOf(lib).id, amount_vnd_mn: "0.00", due_on: box.querySelector("[data-add-due]").value });
+    renumberContract(c); renderContracts(); renderDb();
+  });
+  $("#cList").querySelectorAll("[data-drop]").forEach((b) => b.onclick = () => {
+    const m = msOf(b), c = contractOf(b), v = byId("milestone_versions", m.milestone_version_id);
+    if (T.milestones.filter((x) => x.contract_id === c.id).length === 1) return msg(`[data-cmsg="${c.id}"]`, "bad", "Hợp đồng phải còn ít nhất một mốc.");
+    if (v.is_custom) {
+      T.payment_rules = T.payment_rules.filter((r) => r.milestone_version_id !== v.id);
+      T.milestone_versions = T.milestone_versions.filter((x) => x.id !== v.id);
+    }
+    T.milestones = T.milestones.filter((x) => x.id !== m.id);
+    renumberContract(c); renderContracts(); renderDb();
+  });
+  $("#cList").querySelectorAll("[data-activate]").forEach((b) => b.onclick = () => {
+    const c = contractOf(b), ms = T.milestones.filter((m) => m.contract_id === c.id), box = `[data-cmsg="${c.id}"]`;
+    const total = ms.reduce((a, m) => a + Number(m.pct), 0);
+    if (Math.abs(total - 100) > 0.001) return msg(box, "bad", `Tổng % là ${total.toFixed(2)}, phải đúng 100.`);
+    const bad = ms.map((m) => [m, byId("milestone_versions", m.milestone_version_id)]).filter(([, v]) => v.is_custom && problems(v).length);
+    if (bad.length) return msg(box, "bad", "Luật riêng chưa hợp lệ: " + bad.map(([m, v]) => `${esc(msName(m))} (${problems(v).map(esc).join("; ")})`).join(" · "));
+    ms.forEach((m) => { const v = byId("milestone_versions", m.milestone_version_id); if (v.is_custom) { v.status = "PUBLISHED"; v.published_at = "lúc kích hoạt"; touch("milestone_versions", v); } });
+    c.status = "ACTIVE"; touch("contracts", c); renderContracts(); renderDb();
+  });
+}
+const STATUS_OF = { EVIDENCE: "CONFIRMED", APPROVAL: "APPROVED", REJECTION: "REJECTED", DISPUTE_OPEN: "OPEN", DISPUTE_RESOLVE: "RESOLVED", OTHER: "CONFIRMED" };
+const CATEGORY_VI = { EVIDENCE: "Chứng từ", APPROVAL: "Phê duyệt", REJECTION: "Từ chối", DISPUTE_OPEN: "Mở tranh chấp", DISPUTE_RESOLVE: "Đóng tranh chấp", OTHER: "Khác" };
+const partyName = (id) => byId("parties", id)?.name ?? id;
+// The side a party acts for on a contract: the buyer and its approvers, or the supplier.
+const sideOf = (c, pid) => pid === c.supplier_id ? "SUPPLIER" : (pid === c.buyer_id || byId("parties", pid)?.parent_id === c.buyer_id) ? "BUYER" : null;
+// What the engine will count from the events of one milestone (a preview; the real engine runs on the server).
+function facts(c, m) {
+  const list = T.events.filter((e) => e.milestone_id === m.id), typeOf = (e) => byId("event_types", e.event_type_id);
+  const required = eventsOf(m.milestone_version_id);
+  const docs = {}; list.forEach((e) => { if (e.document_no) docs[e.document_no] = (docs[e.document_no] ?? 0) + 1; });
+  const unauthorized = list.filter((e) => typeOf(e).category === "EVIDENCE" && required.includes(e.event_type_id)
+    && (sideOf(c, e.party_id) !== typeOf(e).actor_side || !byId("parties", e.party_id).allowed_event_type_ids.includes(e.event_type_id)));
+  const valid = list.filter((e) => required.includes(e.event_type_id) && !unauthorized.includes(e));
+  const done = required.filter((t) => valid.some((e) => e.event_type_id === t));
+  const closed = new Set(list.filter((e) => typeOf(e).category === "DISPUTE_RESOLVE").map((e) => e.resolves_event_id));
+  const open = list.filter((e) => typeOf(e).category === "DISPUTE_OPEN" && !closed.has(e.id));
+  return { list, required, done, open, unauthorized,
+    approvals: new Set(list.filter((e) => typeOf(e).category === "APPROVAL").map((e) => e.party_id)).size,
+    rejections: list.filter((e) => typeOf(e).category === "REJECTION").length,
+    duplicates: Object.entries(docs).filter(([, n]) => n > 1) };
+}
+function eventsPanel(c, m) {
+  const f = facts(c, m), types = T.event_types.filter((t) => t.active);
+  const actors = T.parties.filter((p) => sideOf(c, p.id));
+  const row = (e) => { const t = byId("event_types", e.event_type_id);
+    return `<tr><td>${e.id}</td><td>${esc(t.name)}</td><td>${tag(e.status)}</td><td>${esc(partyName(e.party_id))}</td><td>${esc(e.happened_at)}</td>
+      <td>${esc(e.document_no ?? "")}${e.document_no && f.duplicates.some(([d]) => d === e.document_no) ? ` <span class="tag REJECTED">trùng</span>` : ""}</td>
+      <td>${e.resolves_event_id ? "#" + e.resolves_event_id : ""}</td><td>${esc(e.note)}</td></tr>`; };
+  return `<div class="card" style="margin-top:12px; border-color:var(--accent)">
+    <h3 style="margin-top:0">Sự kiện của mốc ${m.position} · ${esc(msName(m))} (milestones.id = ${m.id})</h3>
+    <div class="msg info">Xem trước những gì engine sẽ đếm (engine thật chạy ở server):<br>
+      • Chứng từ bắt buộc: <b>${f.done.length}/${f.required.length}</b>${f.required.length > f.done.length ? ` — còn thiếu: ${esc(f.required.filter((t) => !f.done.includes(t)).map(evName).join(", "))}` : " ✓ đủ"}<br>
+      • Tranh chấp đang mở: <b>${f.open.length}</b>${f.open.length ? ` (${f.open.map((e) => "#" + e.id + " " + esc(e.note)).join(", ")})` : ""}<br>
+      • Số người đã duyệt: <b>${f.approvals}</b> · Số lần từ chối: <b>${f.rejections}</b><br>
+      • Chứng từ sai thẩm quyền: <b>${f.unauthorized.length}</b>${f.unauthorized.length ? ` (${f.unauthorized.map((e) => "#" + e.id).join(", ")})` : ""}<br>
+      • Giấy tờ nộp trùng: <b>${f.duplicates.length ? f.duplicates.map(([d, n]) => esc(d) + " ×" + n).join(", ") : "không"}</b></div>
+    <div class="scroll"><table><tr><th>events.id</th><th>Loại</th><th>status</th><th>Bên</th><th>happened_at</th><th>document_no</th><th>resolves_event_id</th><th>note</th></tr>
+      ${f.list.map(row).join("") || `<tr><td colspan="8" class="hint">Chưa có sự kiện.</td></tr>`}</table></div>
+    <h3>Ghi sự kiện mới</h3>
+    <div class="grid">
+      <label>Loại sự kiện (event_types)<select id="evType">${["EVIDENCE", "APPROVAL", "REJECTION", "DISPUTE_OPEN", "DISPUTE_RESOLVE", "OTHER"].map((cat) =>
+        `<optgroup label="${CATEGORY_VI[cat]}">${types.filter((t) => t.category === cat).map((t) => `<option value="${t.id}">${esc(t.name)}${t.actor_side ? (t.actor_side === "BUYER" ? " (bên mua ghi)" : " (nhà cung cấp ghi)") : ""}</option>`).join("")}</optgroup>`).join("")}</select></label>
+      <label>Bên thực hiện (party_id)<select id="evParty">${actors.map((p) => `<option value="${p.id}">${esc(p.name)} · ${sideOf(c, p.id) === "BUYER" ? (p.type === "APPROVER" ? "người duyệt" : "bên mua") : "nhà cung cấp"}</option>`).join("")}</select></label>
+      <label>Lúc xảy ra (để trống = bây giờ)<input id="evAt" type="datetime-local"></label>
+      <label>Số giấy tờ (document_no)<input id="evDoc" placeholder="INV-0451"></label>
+      <label id="evResolveWrap">Đóng tranh chấp nào (resolves_event_id)<select id="evResolve"><option value="">— chọn —</option>${f.open.map((e) => `<option value="${e.id}">#${e.id} ${esc(e.note || "")}</option>`).join("")}</select></label>
+      <label>Ghi chú (note)<input id="evNote"></label>
+      <button class="btn" id="evAdd">Ghi sự kiện</button>
+    </div>
+    <p class="hint">Trạng thái (status) không cần chọn: máy lấy theo event_types.valid_status. Khi có đăng nhập, "Bên thực hiện" sẽ lấy từ người đang đăng nhập.</p>
+    <div id="evMsg"></div></div>`;
+}
+
+// Opens a contract's own version in the library editor.
+function openOwn(v) {
+  UI.selLib = v.milestone_id; UI.selVersion = v.id;
+  document.querySelector('#tabs [data-tab="lib"]').click(); refresh();
+}
+$("#cCreate").onclick = () => {
+  const tid = Number($("#cType").value), stages = stagesOf(tid);
+  if (!stages.length || Math.abs(totalOf(tid) - 100) > 0.001) return msg("#cMsg", "bad", "Loại này chưa có khuôn mốc đủ 100%.");
+  if (stages.some((s) => !publishedOf(s.milestone_id))) return msg("#cMsg", "bad", "Có mốc chưa có phiên bản công bố.");
+  const c = insert("contracts", { title: $("#cTitle").value, contract_type_id: tid, buyer_id: Number($("#cBuyer").value), supplier_id: Number($("#cSupplier").value), value_vnd_mn: Number($("#cValue").value).toFixed(2), start_on: $("#cStart").value, status: "DRAFT" });
+  const amounts = split(c.value_vnd_mn, stages.map((s) => s.payment_percent));
+  stages.forEach((s, i) => insert("milestones", { contract_id: c.id, position: s.position, pct: s.payment_percent,
+    milestone_version_id: publishedOf(s.milestone_id).id, amount_vnd_mn: amounts[i], due_on: addDays(c.start_on, s.due_after_days) }));
+  msg("#cMsg", "ok", `Đã tạo hợp đồng #${c.id} (DRAFT). Mỗi mốc gắn luật chung đang công bố; muốn khác thì bấm "Dùng luật riêng" ở mốc đó.`);
+  renderContracts(); renderDb();
+};
+
+// ---------- DB panel ----------
+const COLS = {
+  event_types: ["id", "name", "category", "actor_side", "valid_status"], milestone_library: ["id", "name", "active"],
+  milestone_versions: ["id", "milestone_id", "is_custom", "version_no", "status", "required_event_type_ids", "late_penalty", "note"],
+  payment_rules: ["id", "milestone_version_id", "priority", "name", "condition", "decision", "reason_code"],
+  contract_types: ["id", "name", "active"], contract_type_milestones: ["id", "contract_type_id", "position", "milestone_id", "payment_percent", "due_after_days"],
+  contracts: ["id", "title", "contract_type_id", "buyer_id", "supplier_id", "value_vnd_mn", "start_on", "status"],
+  milestones: ["id", "contract_id", "position", "milestone_version_id", "amount_vnd_mn", "due_on"],
+  events: ["id", "milestone_id", "event_type_id", "status", "party_id", "happened_at", "document_no", "resolves_event_id", "note"],
+  parties: ["id", "name", "type", "parent_id", "allowed_event_type_ids"],
+};
+function renderDb() {
+  const open = new Set([...document.querySelectorAll("#db details[open]")].map((d) => d.dataset.t));
+  $("#db").innerHTML = Object.keys(COLS).map((t) => {
+    const rows = T[t].map((r) => {
+      const line = COLS[t].map((c) => Array.isArray(r[c]) ? `{${r[c].join(",")}}` : r[c] ?? "∅").join(" | ");
+      return changed.has(`${t}:${r.id}`) ? `<mark>${esc(line)}</mark>` : esc(line);
+    });
+    const n = T[t].filter((r) => changed.has(`${t}:${r.id}`)).length;
+    return `<details data-t="${t}" ${open.has(t) || (n && t !== "payment_rules") ? "open" : ""}><summary>${t} <span>(${T[t].length} dòng${n ? `, ${n} mới/sửa` : ""})</span></summary>
+      <pre>${esc(COLS[t].join(" | "))}\n${rows.slice(-60).join("\n")}${rows.length > 60 ? `\n… (${rows.length - 60} dòng trước)` : ""}</pre></details>`;
+  }).join("");
+}
+function refresh() { renderLibList(); renderLibDetail(); renderTypeList(); renderDb(); }
+
+// ---------- Start: load the current data into the new tables ----------
+(async () => {
+  try {
+    const [eventTypes, scopes, types, version] = await Promise.all([
+      get("/event-types?pageSize=100"), get("/rule-scopes?pageSize=100"), get("/contract-types?pageSize=100"), get("/rule-versions/current"),
+    ]);
+    const partyRows = await get("/parties?pageSize=100");
+    const p1 = await get(`/payment-rules?ruleVersionId=${version.id}&sortBy=priority&order=asc&pageSize=100`);
+    const p2 = p1.length === 100 ? await get(`/payment-rules?ruleVersionId=${version.id}&sortBy=priority&order=asc&pageSize=100&page=2`) : [];
+    const evId = {};
+    eventTypes.forEach((e) => { evId[e.code] = insert("event_types", { name: e.name, category: e.category, actor_side: e.actorSide,
+      valid_status: STATUS_OF[e.category], active: e.active }, false).id; });
+    const partyId = {};
+    partyRows.forEach((p) => { partyId[p.partyId] = insert("parties", { name: p.partyName, type: p.partyType, parent_code: p.parentPartyId,
+      allowed_event_type_ids: p.allowedEventTypes.map((code) => evId[code]).filter(Boolean) }, false).id; });
+    T.parties.forEach((p) => { p.parent_id = p.parent_code ? partyId[p.parent_code] : null; delete p.parent_code; });
+    const settings = {}, typeRows = [];
+    for (const t of types) {
+      const [c] = await get(`/contracts?contractType=${t.code}&pageSize=1`);
+      const ms = c ? await get(`/contracts/${c.contractId}/milestones`) : [];
+      ms.forEach((m) => settings[m.releaseRuleCode] ??= m);
+      typeRows.push([t, c, ms]);
+    }
+    const libId = {};
+    scopes.sort((a, b) => a.releaseRuleCode.localeCompare(b.releaseRuleCode)).forEach((s) => {
+      const m = insert("milestone_library", { name: s.name, active: true }, false); libId[s.releaseRuleCode] = m.id;
+      const st = settings[s.releaseRuleCode];
+      const v = insert("milestone_versions", { milestone_id: m.id, is_custom: false, version_no: 1, status: "PUBLISHED", required_event_type_ids: (st?.requiredEventTypes ?? []).map((code) => evId[code]), late_penalty: !!st?.latePenaltyApplicable, note: "Dữ liệu ban đầu", published_at: "ban đầu" }, false);
+      [...p1, ...p2].filter((r) => r.releaseRuleCode === s.releaseRuleCode).forEach((r) => insert("payment_rules", { milestone_version_id: v.id, priority: r.priority,
+        name: VI_NAME[r.reasonCode] ?? r.ruleName, condition: r.conditionExpression, decision: r.decision, reason_code: r.reasonCode, payable_formula: r.payableAmountFormula, penalty_formula: r.penaltyAmountFormula }, false));
+    });
+    for (const [t, c, ms] of typeRows) {
+      const ct = insert("contract_types", { name: t.name, active: t.active }, false);
+      ms.forEach((m) => insert("contract_type_milestones", { contract_type_id: ct.id, position: m.milestoneSequence, milestone_id: libId[m.releaseRuleCode],
+        payment_percent: (Number(m.plannedPaymentVndMn) * 100 / Number(c.contractValueVndMn)).toFixed(2), due_after_days: daysBetween(c.startDate, m.dueDate) }, false));
+    }
+  } catch (e) { msg("#libMsg", "bad", "Không đọc được dữ liệu từ API: " + esc(e.message)); return; }
+  $("#cStart").value = new Date().toISOString().slice(0, 10);
+  const partyOptions = (type) => T.parties.filter((p) => p.type === type).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
+  $("#cBuyer").innerHTML = partyOptions("BUYER"); $("#cSupplier").innerHTML = partyOptions("SUPPLIER");
+  UI.selLib = T.milestone_library[0]?.id; UI.selVersion = publishedOf(UI.selLib)?.id; UI.selType = T.contract_types[0]?.id;
+  refresh(); renderTypeDetail();
+})();
+</script>
+</body>
+</html>
