@@ -1,15 +1,22 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { QueryFailedError } from "typeorm";
 import type { Response } from "express";
 import type { ApiError } from "../schemas/base.schema";
 import { requestIdOf, type RequestWithId } from "./response.interceptor";
 
-/** Database errors that are the client's fault, with the HTTP status they deserve. */
-const PRISMA_STATUS: Record<string, { status: HttpStatus; message: string }> = {
-  P2002: { status: HttpStatus.CONFLICT, message: "DUPLICATE_RECORD" },
-  P2003: { status: HttpStatus.BAD_REQUEST, message: "REFERENCED_RECORD_NOT_FOUND" },
-  P2025: { status: HttpStatus.NOT_FOUND, message: "RECORD_NOT_FOUND" },
+/** PostgreSQL errors that are the client's fault (SQLSTATE codes), with the HTTP status they deserve. */
+const DATABASE_STATUS: Record<string, { status: HttpStatus; message: string }> = {
+  "23505": { status: HttpStatus.CONFLICT, message: "DUPLICATE_RECORD" }, // unique_violation
+  "23503": { status: HttpStatus.CONFLICT, message: "REFERENCED_RECORD_CONFLICT" }, // foreign_key_violation
+  "23514": { status: HttpStatus.BAD_REQUEST, message: "CONSTRAINT_VIOLATION" }, // check_violation
 };
+
+/** SQLSTATE code of a failed query, if the database gave one. */
+function sqlState(exception: unknown): string | undefined {
+  if (!(exception instanceof QueryFailedError)) return undefined;
+  const code = (exception.driverError as { code?: unknown }).code;
+  return typeof code === "string" ? code : undefined;
+}
 
 /**
  * One error format for every failure (exception_handler.py of the chatbot). Unexpected errors
@@ -30,8 +37,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const body = exception.getResponse();
       const raw = typeof body === "string" ? body : (body as { message?: string | string[] }).message;
       message = Array.isArray(raw) ? raw.join("; ") : (raw ?? exception.message);
-    } else if (exception instanceof Prisma.PrismaClientKnownRequestError && PRISMA_STATUS[exception.code]) {
-      const mapped = PRISMA_STATUS[exception.code]!;
+    } else if (sqlState(exception) === "23514" && /^[A-Z_]+:/.test((exception as Error).message)) {
+      statusCode = HttpStatus.CONFLICT;
+      message = (exception as Error).message;
+    } else if (DATABASE_STATUS[sqlState(exception) ?? ""]) {
+      const mapped = DATABASE_STATUS[sqlState(exception)!]!;
       statusCode = mapped.status;
       message = mapped.message;
     } else {

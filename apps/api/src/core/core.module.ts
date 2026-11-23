@@ -1,7 +1,7 @@
-import { Global, Module } from "@nestjs/common";
-import { PrismaService } from "./prisma.service";
+import { Module } from "@nestjs/common";
+import { TypeOrmModule } from "@nestjs/typeorm";
+import { databaseOptions } from "./data-source";
 
-/** Shared services; @Global so feature modules can inject PrismaService without importing this. */
-@Global()
-@Module({ providers: [PrismaService], exports: [PrismaService] })
+/** Opens the database connection; the DataSource is then injectable in every repository. */
+@Module({ imports: [TypeOrmModule.forRoot(databaseOptions)] })
 export class CoreModule {}

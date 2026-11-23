@@ -4,25 +4,33 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "nest start --watch",
-    "build": "prisma generate && nest build",
+    "build": "nest build",
     "start": "node --env-file-if-exists=.env dist/main.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typeorm": "TS_NODE_TRANSPILE_ONLY=true typeorm-ts-node-commonjs -d src/core/data-source.ts",
+    "db:generate": "pnpm typeorm migration:generate",
+    "db:migrate": "pnpm typeorm migration:run",
+    "db:revert": "pnpm typeorm migration:revert"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
-    "@prisma/client": "^6.19.3",
+    "@nestjs/swagger": "^11.4.8",
+    "@nestjs/typeorm": "^11.0.3",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "pg": "^8.23.1",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.2"
+    "rxjs": "^7.8.2",
+    "typeorm": "^0.3.31"
   },
   "devDependencies": {
     "@nestjs/cli": "^11.0.24",
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.5",
-    "prisma": "^6.0.0",
+    "@types/pg": "^8.23.1",
+    "ts-node": "^10.9.2",
     "typescript": "~5.9.3"
   }
 }

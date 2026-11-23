@@ -16,7 +16,7 @@ export function isPaginated(value: unknown): value is Paginated<unknown> {
   return value instanceof Paginated;
 }
 
-/** Prisma skip/take for a page; page and pageSize are already validated by ListQueryDto. */
+/** Offset (skip) and limit (take) of a page; page and pageSize are already validated by ListQueryDto. */
 export function toSkipTake(query: Pick<ListQueryDto, "page" | "pageSize">): { skip: number; take: number } {
   return { skip: (query.page - 1) * query.pageSize, take: query.pageSize };
 }

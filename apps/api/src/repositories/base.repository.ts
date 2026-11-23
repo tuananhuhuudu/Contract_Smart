@@ -1,92 +1,154 @@
-import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
-import type { DbClient } from "../core/prisma.service";
+import {
+  BadRequestException,
+  ConflictException,
+  MethodNotAllowedException,
+  NotFoundException,
+} from "@nestjs/common";
+import type {
+  DataSource,
+  DeepPartial,
+  EntityManager,
+  EntityTarget,
+  FindOptionsOrder,
+  FindOptionsWhere,
+  ObjectLiteral,
+  Repository,
+} from "typeorm";
+import type { QueryDeepPartialEntity } from "typeorm/query-builder/QueryPartialEntity";
 import type { ListQueryDto } from "../schemas/base.schema";
 import { pageMeta, Paginated, toSkipTake } from "../utils/paging";
 
-type Where = Record<string, unknown>;
+/** Upper bound of findMany, so no call loads a whole large table by accident. */
+export const MAX_FIND_MANY = 1000;
 
-/**
- * The part of a Prisma model delegate (prisma.contract, prisma.user, ...) the base repository
- * uses. Each subclass returns its delegate through `delegate()`.
- */
-export interface ModelDelegate<T> {
-  findUnique(args: { where: Where }): Promise<T | null>;
-  findMany(args: { where?: Where; orderBy?: Where; skip?: number; take?: number }): Promise<T[]>;
-  count(args?: { where?: Where }): Promise<number>;
-  create(args: { data: unknown }): Promise<T>;
-  updateMany(args: { where: Where; data: unknown }): Promise<{ count: number }>;
-}
+/** Rows to match, by property name (TypeORM maps them to columns). */
+export type Where<T> = FindOptionsWhere<T>;
 
 /**
  * Generic repository (BaseRepository of the chatbot), adapted for this project:
- *  - never commits by itself: every method takes an optional transaction client `db`;
+ *  - never commits by itself: every method takes an optional EntityManager `db`, so a service can
+ *    run several calls inside one `dataSource.transaction(...)`;
  *  - sorting only by the whitelisted `sortableFields`;
- *  - updates check `version` (optimistic locking): a stale version gives 409, not a lost update;
- *  - no generic delete: events and the audit log are append-only, Data Pack rows stay as given.
+ *  - updates and deletes check `version` (optimistic locking): a stale version gives 409;
+ *  - delete is off by default (405); a table that may lose rows sets `allowDelete = true`.
  *
- * T is the row type, K the name of its primary key field (for example "contractId"),
- * C the create input and U the update input of the model.
+ * T is the entity class (it extends BaseModel, so it has `version`), K the name of its primary
+ * key property (for example "code").
  */
-export abstract class BaseRepository<T, K extends keyof T & string, C, U> {
-  /** Name of the primary key field. */
+export abstract class BaseRepository<T extends ObjectLiteral, K extends keyof T & string> {
+  /** The entity class, for example ContractType. */
+  protected abstract readonly entity: EntityTarget<T>;
+  /** Name of the primary key property. */
   protected abstract readonly idField: K;
-  /** Fields a client may sort by; anything else is rejected with 400. */
+  /** Properties a client may sort by; anything else is rejected with 400. */
   protected abstract readonly sortableFields: readonly (keyof T & string)[];
   /** Sort used when the client gives none. */
   protected abstract readonly defaultSort: keyof T & string;
-  /** Name of the version field, or null when the table has no optimistic lock. */
-  protected readonly versionField: (keyof T & string) | null = "version" as keyof T & string;
+  /** Whether rows of this table may be deleted at all. */
+  protected readonly allowDelete: boolean = false;
 
-  constructor(protected readonly prisma: DbClient) {}
+  constructor(protected readonly dataSource: DataSource) {}
 
-  /** The Prisma delegate of this model on the given client (the shared one or a transaction). */
-  protected abstract delegate(db: DbClient): ModelDelegate<T>;
+  /** The TypeORM repository on the shared connection or on a running transaction. */
+  protected repo(db?: EntityManager): Repository<T> {
+    return (db ?? this.dataSource.manager).getRepository(this.entity);
+  }
+
+  // Building a where/order object from a property name needs a cast: TypeScript cannot tie a
+  // computed key to the entity's property types.
+  private byId(id: T[K]): Where<T> {
+    return { [this.idField]: id } as unknown as Where<T>;
+  }
 
   /** Row by primary key, or null. */
-  findByIdOptional(id: T[K], db: DbClient = this.prisma): Promise<T | null> {
-    return this.delegate(db).findUnique({ where: { [this.idField]: id } });
+  findByIdOptional(id: T[K], db?: EntityManager): Promise<T | null> {
+    return this.repo(db).findOneBy(this.byId(id));
   }
 
   /** Row by primary key; 404 when it does not exist. */
-  async findById(id: T[K], db: DbClient = this.prisma): Promise<T> {
+  async findById(id: T[K], db?: EntityManager): Promise<T> {
     const row = await this.findByIdOptional(id, db);
-    if (!row) throw new NotFoundException(`${this.constructor.name.replace("Repository", "")} ${String(id)} not found`);
+    if (!row) throw new NotFoundException(`${this.entityName} ${String(id)} not found`);
     return row;
   }
 
-  /** One page of rows matching `where`, sorted by a whitelisted field. */
-  async findPage(query: ListQueryDto, where: Where = {}, db: DbClient = this.prisma): Promise<Paginated<T>> {
-    const sortBy = this.sortField(query.sortBy);
-    const delegate = this.delegate(db);
-    const [items, total] = await Promise.all([
-      delegate.findMany({ where, orderBy: { [sortBy]: query.order }, ...toSkipTake(query) }),
-      delegate.count({ where }),
-    ]);
+  /** One page of rows matching `where`, sorted by a whitelisted property. */
+  async findPage(query: ListQueryDto, where: Where<T> = {}, db?: EntityManager): Promise<Paginated<T>> {
+    const order = { [this.sortField(query.sortBy)]: query.order } as unknown as FindOptionsOrder<T>;
+    const [items, total] = await this.repo(db).findAndCount({ where, order, ...toSkipTake(query) });
     return new Paginated(items, pageMeta(query, total));
   }
 
-  create(data: C, db: DbClient = this.prisma): Promise<T> {
-    return this.delegate(db).create({ data });
+  /** First row matching `where` (for example a user by email), or null. */
+  findOne(where: Where<T>, db?: EntityManager): Promise<T | null> {
+    return this.repo(db).findOneBy(where);
+  }
+
+  /** Every row matching `where`, sorted by the default sort, at most `limit` rows. */
+  findMany(where: Where<T> = {}, limit = MAX_FIND_MANY, db?: EntityManager): Promise<T[]> {
+    const take = Math.min(Math.max(1, limit), MAX_FIND_MANY);
+    const order = { [this.defaultSort]: "asc" } as unknown as FindOptionsOrder<T>;
+    return this.repo(db).find({ where, order, take });
+  }
+
+  count(where: Where<T> = {}, db?: EntityManager): Promise<number> {
+    return this.repo(db).countBy(where);
+  }
+
+  /** True when at least one row matches, for example to refuse a duplicate before creating. */
+  async exists(where: Where<T>, db?: EntityManager): Promise<boolean> {
+    return (await this.count(where, db)) > 0;
   }
 
   /**
-   * Updates the row only if it still has `expectedVersion`, and bumps the version.
+   * Inserts a new row; an existing key is a 409 (DUPLICATE_RECORD), never a silent overwrite
+   * (TypeORM's save() would update the existing row instead).
+   */
+  async create(data: DeepPartial<T>, db?: EntityManager): Promise<T> {
+    const repo = this.repo(db);
+    const entity = repo.create(data);
+    await repo.insert(entity as QueryDeepPartialEntity<T>); // fills defaults (version, created_at) back in
+    return entity;
+  }
+
+  /** Inserts several rows in one statement (seed data, all milestones of a contract). */
+  async createMany(data: DeepPartial<T>[], db?: EntityManager): Promise<number> {
+    if (data.length === 0) return 0;
+    await this.repo(db).insert(data as QueryDeepPartialEntity<T>[]);
+    return data.length;
+  }
+
+  /**
+   * Updates the row only if it still has `expectedVersion`; TypeORM adds 1 to the version.
    * 404 when the row is gone, 409 when someone else changed it first.
    */
-  async update(id: T[K], expectedVersion: number, data: Partial<U>, db: DbClient = this.prisma): Promise<T> {
-    const delegate = this.delegate(db);
-    const where: Where = { [this.idField]: id };
-    const changes: Record<string, unknown> = { ...data };
-    if (this.versionField) {
-      where[this.versionField] = expectedVersion;
-      changes[this.versionField] = { increment: 1 };
-    }
-    const { count } = await delegate.updateMany({ where, data: changes });
-    if (count === 0) {
+  async update(id: T[K], expectedVersion: number, data: Partial<T>, db?: EntityManager): Promise<T> {
+    const where = { ...this.byId(id), version: expectedVersion } as Where<T>;
+    const { affected } = await this.repo(db).update(where, data as QueryDeepPartialEntity<T>);
+    if (!affected) {
       await this.findById(id, db); // 404 if missing
       throw new ConflictException("VERSION_CONFLICT: the record was changed by someone else; reload and retry");
     }
     return this.findById(id, db);
+  }
+
+  /**
+   * Deletes the row only if it still has `expectedVersion`. 405 when the table does not allow
+   * deleting, 404 when the row is gone, 409 when someone else changed it first.
+   */
+  async delete(id: T[K], expectedVersion: number, db?: EntityManager): Promise<void> {
+    if (!this.allowDelete) throw new MethodNotAllowedException(`${this.entityName} cannot be deleted`);
+    const where = { ...this.byId(id), version: expectedVersion } as Where<T>;
+    const { affected } = await this.repo(db).delete(where);
+    if (!affected) {
+      await this.findById(id, db); // 404 if missing
+      throw new ConflictException("VERSION_CONFLICT: the record was changed by someone else; reload and retry");
+    }
+  }
+
+  /** Name used in error messages, for example "ContractType" for ContractTypeRepository. */
+  protected get entityName(): string {
+    return this.constructor.name.replace(/Repository$/, "");
   }
 
   private sortField(requested: string | undefined): keyof T & string {
