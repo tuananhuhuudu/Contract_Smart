@@ -1,4 +1,4 @@
-// Contract Smart: the tables that exist today (groups 1-2 of docs/thiet-ke-thu-vien-moc.dbml).
+// Contract Smart: the tables that exist today (groups 1-3 of docs/thiet-ke-thu-vien-moc.dbml).
 // Paste into https://dbdiagram.io/d to see the diagram. The full target design is in thiet-ke-thu-vien-moc.dbml.
 // Every table also has: version (optimistic lock), created_at, updated_at.
 
@@ -76,4 +76,25 @@ Table payment_rules [headercolor: #7a4fd1] {
     (milestone_version_id, priority) [unique]
   }
   Note: 'Luat: neu ... thi ... vi ...'
+}
+
+Table contract_types [headercolor: #2f6fb3] {
+  id integer [pk, increment]
+  name text [not null, note: 'Tu van']
+  active boolean [not null, default: true]
+  Note: 'Loai hop dong'
+}
+
+Table contract_type_milestones [headercolor: #2f6fb3] {
+  id integer [pk, increment]
+  contract_type_id integer [not null, ref: > contract_types.id]
+  position integer [not null, note: 'thu tu moc: 1, 2, 3']
+  milestone_id integer [not null, ref: > milestone_library.id]
+  payment_percent "numeric(5,2)" [not null, note: '40.00; tong = 100']
+  due_after_days integer [not null, note: 'han = ngay bat dau + so ngay']
+  indexes {
+    (contract_type_id, position) [unique]
+    (contract_type_id, milestone_id) [unique]
+  }
+  Note: 'Khuon: loai hop dong gom moc nao, bao nhieu %, han bao lau'
 }
