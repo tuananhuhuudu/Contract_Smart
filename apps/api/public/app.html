@@ -7,6 +7,7 @@
 <style>
   :root { --bg:#f6f7f9; --card:#fff; --line:#dde1e7; --text:#1c2430; --muted:#5d6878; --accent:#2f6fb3; --ok:#1f7a5a; --err:#b3261e; --warn:#9a6700; }
   * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
   body { margin:0; font:14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); }
   header { background:var(--card); border-bottom:1px solid var(--line); padding:10px 20px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
   header h1 { font-size:17px; margin:0; }
@@ -81,7 +82,7 @@
       <button class="btn" id="lgBtn">Đăng nhập</button>
     </div>
     <div id="lgMsg"></div>
-    <p class="hint" style="margin-top:12px">Tài khoản demo (mật khẩu Passw0rd!), bấm để điền:</p>
+    <p class="hint" style="margin-top:12px">Hoặc bấm một tài khoản demo để vào luôn:</p>
     <div class="accounts" id="accounts"></div>
   </section>
 
@@ -163,15 +164,21 @@ const DEMO = [
   ["legal@novaan.vn", "Nova An: pháp lý"], ["owner@novaan.vn", "Nova An: chủ hợp đồng"],
   ["finance@novaan.vn", "Nova An: duyệt tài chính"], ["secondary@novaan.vn", "Nova An: duyệt thứ hai"],
   ["controller@novaan.vn", "Nova An: kiểm soát"], ["supplier@phuminh.vn", "Phú Minh: nhà cung cấp"],
+  ["controller@phuminh.vn", "Phú Minh: kiểm soát"],
 ];
+/** One click logs in as a demo account (development data, password from the seed). */
+async function loginAs(email, password = "Passw0rd!") {
+  const r = await data("POST", "/auth/login", { email, password });
+  TOKEN = r.accessToken; try { localStorage.setItem("cs_token", TOKEN); } catch { /* ignore */ }
+  await start();
+}
 $("#accounts").innerHTML = DEMO.map(([e, n]) => `<button data-e="${e}"><b>${esc(n)}</b><br><small>${esc(e)}</small></button>`).join("");
-$("#accounts").querySelectorAll("button").forEach((b) => b.onclick = () => { $("#lgEmail").value = b.dataset.e; $("#lgPass").value = "Passw0rd!"; });
+$("#accounts").querySelectorAll("button").forEach((b) => b.onclick = async () => {
+  try { await loginAs(b.dataset.e); } catch (e) { $("#lgMsg").innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+});
 $("#lgBtn").onclick = async () => {
-  try {
-    const r = await data("POST", "/auth/login", { email: $("#lgEmail").value, password: $("#lgPass").value });
-    TOKEN = r.accessToken; try { localStorage.setItem("cs_token", TOKEN); } catch { /* ignore */ }
-    await start();
-  } catch (e) { $("#lgMsg").innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
+  try { await loginAs($("#lgEmail").value, $("#lgPass").value); }
+  catch (e) { $("#lgMsg").innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; }
 };
 function logout() {
   TOKEN = null; try { localStorage.removeItem("cs_token"); } catch { /* ignore */ }
@@ -181,6 +188,7 @@ function logout() {
 
 // ---------------- Tabs ----------------
 function showTab(name) {
+  S.tab = name;
   document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x.dataset.tab === name));
   document.querySelectorAll("[data-page]").forEach((s) => s.hidden = s.dataset.page !== name);
   ({ lib: loadLib, types: loadTypes, contracts: loadContracts })[name]();
@@ -188,6 +196,52 @@ function showTab(name) {
 document.querySelectorAll("#tabs button").forEach((b) => b.onclick = run(() => showTab(b.dataset.tab)));
 
 const NEGOTIATORS = ["CONTRACT_OWNER", "LEGAL_REVIEWER"];
+const MONEY = {
+  none: { label: "Không trả", payableFormula: "0", penaltyFormula: "0" },
+  full: { label: "Trả đủ tiền mốc", payableFormula: "planned_payment_vnd_mn", penaltyFormula: "0" },
+  late: { label: "Trả sau khi trừ phạt trễ (theo % phạt/ngày, có trần)",
+    payableFormula: "MAX(0, planned_payment_vnd_mn - penalty_amount_vnd_mn)",
+    penaltyFormula: "MIN(days_late_after_grace * penalty_rate_pct_per_day / 100 * planned_payment_vnd_mn, max_penalty_pct / 100 * planned_payment_vnd_mn)" },
+};
+/**
+ * Ready-made rules: people pick a sentence (and at most one number); the page fills the condition, the
+ * decision, the reason and the money. They match the organiser's sample rules word for word, so existing
+ * rules show as sentences too. Anything else is a hand-written rule, edited under "Nâng cao".
+ */
+const TEMPLATES = [
+  { key: "dispute", prio: 10, text: "Đang có tranh chấp thì giữ tiền", condition: "open_dispute == TRUE", decision: "HOLD", reasonCode: "OPEN_DISPUTE" },
+  { key: "rejection", prio: 20, text: "Bên mua từ chối thì không trả", condition: "valid_rejection_event_count > 0", decision: "REJECT", reasonCode: "REJECTION_PRESENT" },
+  { key: "unauthorized", prio: 30, text: "Chứng từ do bên không có quyền ghi thì giữ tiền", condition: "unauthorized_required_event_count > 0", decision: "HOLD", reasonCode: "UNAUTHORIZED_EVENT" },
+  { key: "missing", prio: 40, text: "Thiếu chứng từ bắt buộc thì giữ tiền", condition: "required_event_completion_rate < 1.0", decision: "HOLD", reasonCode: "MISSING_REQUIRED_EVENT" },
+  { key: "approvals", prio: 50, text: "Mốc cần duyệt mà chưa đủ người duyệt (theo chính sách hợp đồng) thì giữ tiền",
+    condition: "approval_required == TRUE AND valid_approval_count < required_approval_quorum", decision: "HOLD", reasonCode: "APPROVAL_QUORUM_NOT_MET" },
+  { key: "minApprovals", prio: 52, text: "Chưa đủ {n} người duyệt thì giữ tiền", param: 2, match: /^valid_approval_count < (\d+)$/,
+    condition: (n) => `valid_approval_count < ${n}`, decision: "HOLD", reasonCode: "APPROVAL_QUORUM_NOT_MET" },
+  { key: "lateReject", prio: 55, text: "Trễ quá {n} ngày (sau ân hạn) thì từ chối", param: 30, match: /^days_late_after_grace > (\d+)$/,
+    condition: (n) => `days_late_after_grace > ${n}`, decision: "REJECT", reasonCode: "LATE_COMPLETION" },
+  { key: "late", prio: 60, text: "Xong trễ hạn thì trừ tiền phạt (theo % phạt/ngày của hợp đồng, có trần)",
+    condition: "late_penalty_applicable == TRUE AND actual_completion_date > due_date + grace_period_days", decision: "PENALTY", reasonCode: "LATE_COMPLETION" },
+  { key: "release", prio: 70, text: "Đủ mọi điều kiện thì trả đủ tiền",
+    condition: "all_required_conditions_met == TRUE AND open_dispute == FALSE AND valid_rejection_event_count == 0", decision: "RELEASE", reasonCode: "ALL_CONDITIONS_MET" },
+  { key: "else", prio: 80, text: "Các trường hợp còn lại thì giữ tiền để kiểm tra", condition: "ELSE", decision: "HOLD", reasonCode: "UNRESOLVED_CONDITION" },
+];
+/** The template a rule was made from, with its number: { t, n } or null. */
+function templateOf(r) {
+  for (const t of TEMPLATES) {
+    if (t.decision !== r.decision) continue;
+    if (t.match) { const m = r.condition.trim().match(t.match); if (m) return { t, n: +m[1] }; }
+    else if (squash(t.condition) === squash(r.condition)) return { t, n: null };
+  }
+  return null;
+}
+const RESULT_TONE = { RELEASE: "PUBLISHED", PENALTY: "OPEN", HOLD: "DRAFT", REJECT: "REJECTED" };
+
+/** The money a decision normally pays. */
+const MONEY_OF = { RELEASE: "full", PENALTY: "late", HOLD: "none", REJECT: "none" };
+const squash = (t) => String(t).replace(/\s+/g, "");
+/** Rules switched to "custom" on this page keep their formula boxes open even while they still match a preset. */
+const customMoney = new Set();
+const moneyOf = (r) => customMoney.has(r.id) ? "custom" : Object.keys(MONEY).find((k) => squash(MONEY[k].payableFormula) === squash(r.payableFormula) && squash(MONEY[k].penaltyFormula) === squash(r.penaltyFormula)) ?? "custom";
 const RECORDERS = ["SUPPLIER", "LEGAL_REVIEWER", "CONTRACT_OWNER", "FINANCE_APPROVER", "SECONDARY_APPROVER"];
 const isAdmin = () => S.user?.role === "SYSTEM_ADMIN";
 const negotiatesFor = (c) => NEGOTIATORS.includes(S.user?.role) && S.org === c.buyerId;
@@ -232,17 +286,34 @@ async function renderLib() {
       <label style="grid-column:1/-1">Sự kiện bắt buộc
         <div class="checks">${evidence.map((t) => `<label><input type="checkbox" value="${t.id}" ${v.requiredEventTypeIds.includes(t.id) ? "checked" : ""} ${dis}>${esc(t.name)}</label>`).join("")}</div></label>
     </div>
-    <div class="row" style="justify-content:space-between; margin-top:14px"><h3 style="margin:0">Luật (xét từ ưu tiên nhỏ đến lớn, luật cuối là ELSE)</h3>
-      ${editable ? `<button class="btn sec small" id="addRule">+ Thêm luật</button>` : ""}</div>
-    <div class="scroll"><table id="rules"><tr><th>Ưu tiên</th><th>Tên luật</th><th>Nếu</th><th>Thì</th><th>Lý do</th><th>Tiền trả</th><th>Tiền phạt</th>${editable ? "<th></th>" : ""}</tr>
+    <div class="row" style="justify-content:space-between; margin-top:14px"><h3 style="margin:0">Luật (xét từ trên xuống, luật đầu tiên đúng sẽ quyết định)</h3>
+      <button class="btn sec small" id="toggleAdv">${S.advanced ? "‹ Xem dạng câu" : "Nâng cao: chỉnh từng điều kiện ›"}</button></div>
+    ${S.advanced ? `    <div class="scroll"><table id="rules"><tr><th>Ưu tiên</th><th>Tên luật</th><th>Nếu</th><th>Thì</th><th>Lý do</th><th>Tiền</th>${editable ? "<th></th>" : ""}</tr>
       ${v.rules.map((r) => `<tr data-id="${r.id}"><td style="width:70px"><input data-f="priority" type="number" value="${r.priority}" ${dis}></td>
         <td style="min-width:200px"><input data-f="name" value="${esc(r.name)}" ${dis}></td>
         <td style="min-width:440px">${condEditor(r, dis)}</td>
-        <td><select data-f="decision" ${dis}>${["RELEASE", "HOLD", "REJECT", "PENALTY"].map((x) => `<option value="${x}" ${x === r.decision ? "selected" : ""}>${DECISION_VI[x]}</option>`).join("")}</select></td>
+        <td style="min-width:150px"><select data-f="decision" ${dis}>${["RELEASE", "HOLD", "REJECT", "PENALTY"].map((x) => `<option value="${x}" ${x === r.decision ? "selected" : ""}>${DECISION_VI[x]}</option>`).join("")}</select></td>
         <td style="min-width:170px"><select data-f="reasonCode" ${dis}>${REASONS.map((x) => `<option value="${x[0]}" ${x[0] === r.reasonCode ? "selected" : ""}>${esc(x[1])} → ${esc(x[2])}</option>`).join("")}</select></td>
-        <td><input data-f="payableFormula" value="${esc(r.payableFormula)}" ${dis}></td><td><input data-f="penaltyFormula" value="${esc(r.penaltyFormula)}" ${dis}></td>
+        <td style="min-width:230px"><select data-money ${dis}>${Object.entries(MONEY).map(([k, x]) => `<option value="${k}" ${moneyOf(r) === k ? "selected" : ""}>${esc(x.label)}</option>`).join("")}
+            <option value="custom" ${moneyOf(r) === "custom" ? "selected" : ""}>Công thức khác…</option></select>
+          ${moneyOf(r) === "custom" ? `<div style="margin-top:4px"><input data-f="payableFormula" title="Tiền trả" placeholder="Tiền trả" value="${esc(r.payableFormula)}" ${dis}>
+            <input data-f="penaltyFormula" title="Tiền phạt" placeholder="Tiền phạt" value="${esc(r.penaltyFormula)}" ${dis} style="margin-top:4px"></div>` : ""}</td>
         ${editable ? `<td><button class="btn sec small" data-rm="${r.id}" data-v="${r.version}">Xóa</button></td>` : ""}</tr>`).join("") || `<tr><td colspan="8" class="hint">Chưa có luật.</td></tr>`}
     </table></div>
+` : `
+    <div class="scroll"><table id="simple"><tr><th style="width:40px">#</th><th>Luật</th><th style="width:150px">Kết quả</th>${editable ? "<th style=\"width:150px\"></th>" : ""}</tr>
+      ${v.rules.map((r, i) => { const tm = templateOf(r);
+        const text = tm ? esc(tm.t.text).replace("{n}", editable ? `<input data-param type="number" min="0" style="width:70px" value="${tm.n}">` : String(tm.n))
+          : `<i>Luật tự viết:</i> ${esc(sentence(parseCondition(r.condition)))} <span class="hint">(sửa ở Nâng cao)</span>`;
+        return `<tr data-id="${r.id}"><td>${i + 1}</td><td>${text}</td><td><span class="tag ${RESULT_TONE[r.decision]}">${esc(DECISION_VI[r.decision])}</span></td>
+          ${editable ? `<td style="white-space:nowrap">${i > 0 && r.condition !== "ELSE" ? `<button class="btn sec small" data-up title="Lên trên">↑</button>` : ""}
+            ${i < v.rules.length - 1 && v.rules[i + 1].condition !== "ELSE" && r.condition !== "ELSE" ? `<button class="btn sec small" data-down title="Xuống dưới">↓</button>` : ""}
+            <button class="btn sec small" data-del>Xóa</button></td>` : ""}</tr>`; }).join("") || `<tr><td colspan="4" class="hint">Chưa có luật. Thêm từ danh sách bên dưới.</td></tr>`}
+    </table></div>
+    ${editable ? `<div class="row" style="margin-top:8px"><select id="tplPick" style="flex:1">${TEMPLATES
+        .filter((t) => !v.rules.some((r) => templateOf(r)?.t.key === t.key))
+        .map((t) => `<option value="${t.key}">${esc(t.text.replace("{n}", "…"))}</option>`).join("")}</select>
+      <button class="btn small" id="tplAdd">+ Thêm luật này</button></div>` : ""}`}
     <div class="row" style="justify-content:flex-end; margin-top:12px">
       ${S.backTo ? `<button class="btn sec" id="back">‹ Quay lại hợp đồng</button>` : ""}
       ${editable && !custom ? `<button class="btn" id="publish">Công bố v${v.versionNo}</button>` : ""}</div>`}`;
@@ -250,6 +321,7 @@ async function renderLib() {
   $("#libDetail").querySelectorAll(".vtabs [data-v]").forEach((b) => b.onclick = run(async () => { S.selVersion = +b.dataset.v; await renderLib(); }));
   if ($("#newVer")) $("#newVer").onclick = run(async () => { const nv = await data("POST", `/milestone-library/${m.id}/versions`); S.selVersion = nv.id; toast("ok", `Đã tạo bản nháp v${nv.versionNo}.`); await renderLib(); });
   if ($("#back")) $("#back").onclick = run(async () => { S.selContract = S.backTo; S.backTo = null; showTab("contracts"); });
+  if ($("#toggleAdv")) $("#toggleAdv").onclick = run(async () => { S.advanced = !S.advanced; await renderLib(); });
   if (!v || !editable) return;
   const patchVersion = async (changes) => { await data("PATCH", `/milestone-versions/${v.id}`, { version: v.version, ...changes }); await renderLib(); };
   $("#vPen").onchange = run((e) => patchVersion({ latePenalty: e.target.value === "true" }));
@@ -257,9 +329,61 @@ async function renderLib() {
   $("#libDetail").querySelectorAll(".checks input").forEach((c) => c.onchange = run(() =>
     patchVersion({ requiredEventTypeIds: [...$("#libDetail").querySelectorAll(".checks input:checked")].map((x) => +x.value) })));
   const ruleOf = (el) => v.rules.find((r) => r.id === +el.closest("tr").dataset.id);
+  const patchRule = (r, changes) => data("PATCH", `/payment-rules/${r.id}`, { version: r.version, ...changes });
+  if (!S.advanced) {
+    // Number inside a sentence, e.g. "Trễ quá 30 ngày thì từ chối".
+    $("#simple").querySelectorAll("[data-param]").forEach((el) => el.onchange = run(async () => {
+      const r = ruleOf(el), tm = templateOf(r);
+      await patchRule(r, { condition: tm.t.condition(+el.value), name: tm.t.text.replace("{n}", el.value) }); await renderLib();
+    }));
+    // Swap the priority of two neighbours (through a free number, priorities are unique per version).
+    const swap = async (a, b) => {
+      const free = Math.max(...v.rules.map((r) => r.priority)) + 1;
+      await patchRule(a, { priority: free });
+      await patchRule(b, { priority: a.priority });
+      await data("PATCH", `/payment-rules/${a.id}`, { version: a.version + 1, priority: b.priority });
+      await renderLib();
+    };
+    $("#simple").querySelectorAll("[data-up]").forEach((b) => b.onclick = run(() => { const r = ruleOf(b), i = v.rules.indexOf(r); return swap(r, v.rules[i - 1]); }));
+    $("#simple").querySelectorAll("[data-down]").forEach((b) => b.onclick = run(() => { const r = ruleOf(b), i = v.rules.indexOf(r); return swap(r, v.rules[i + 1]); }));
+    $("#simple").querySelectorAll("[data-del]").forEach((b) => b.onclick = run(async () => { const r = ruleOf(b); await api("DELETE", `/payment-rules/${r.id}?version=${r.version}`); await renderLib(); }));
+    // Add a ready-made rule at its usual place, always above the final "còn lại" rule.
+    if ($("#tplAdd")) $("#tplAdd").onclick = run(async () => {
+      const t = TEMPLATES.find((x) => x.key === $("#tplPick").value);
+      if (!t) return;
+      const used = new Set(v.rules.map((r) => r.priority));
+      const last = v.rules.find((r) => r.condition === "ELSE")?.priority;
+      let p = t.prio;
+      if (t.key === "else") { if (last) throw new Error("Đã có luật cuối cùng."); p = Math.max(80, ...v.rules.map((r) => r.priority + 10)); }
+      else {
+        const limit = last ?? Infinity;
+        if (used.has(p) || p >= limit) { p = [...Array(Math.min(limit, 1000)).keys()].map((x) => x + 1).find((x) => !used.has(x) && x < limit && x >= 1); }
+        if (!p) throw new Error("Không còn chỗ trước luật cuối cùng.");
+      }
+      const n = t.param, { payableFormula, penaltyFormula } = MONEY[MONEY_OF[t.decision]];
+      await data("POST", `/milestone-versions/${v.id}/rules`, {
+        priority: p, name: t.text.replace("{n}", n ?? ""), condition: typeof t.condition === "function" ? t.condition(n) : t.condition,
+        decision: t.decision, reasonCode: t.reasonCode, payableFormula, penaltyFormula,
+      });
+      await renderLib();
+    });
+  }
+  if (S.advanced) {
   $("#rules").querySelectorAll("tr[data-id] [data-f]").forEach((el) => el.onchange = run(async () => {
-    const r = ruleOf(el), f = el.dataset.f;
-    await data("PATCH", `/payment-rules/${r.id}`, { version: r.version, [f]: f === "priority" ? +el.value : el.value }); await renderLib();
+    const r = ruleOf(el), f = el.dataset.f, body = { version: r.version, [f]: f === "priority" ? +el.value : el.value };
+    // Changing "Thì" also sets the money it normally pays, unless the rule uses its own formula.
+    if (f === "decision" && moneyOf(r) !== "custom") {
+      const { payableFormula, penaltyFormula } = MONEY[MONEY_OF[el.value]];
+      Object.assign(body, { payableFormula, penaltyFormula });
+    }
+    await data("PATCH", `/payment-rules/${r.id}`, body); await renderLib();
+  }));
+  $("#rules").querySelectorAll("[data-money]").forEach((el) => el.onchange = run(async () => {
+    const r = ruleOf(el);
+    if (el.value === "custom") { customMoney.add(r.id); await renderLib(); return toast("ok", "Sửa công thức trong 2 ô bên dưới (tiền trả, tiền phạt)."); }
+    customMoney.delete(r.id);
+    const { payableFormula, penaltyFormula } = MONEY[el.value];
+    await data("PATCH", `/payment-rules/${r.id}`, { version: r.version, payableFormula, penaltyFormula }); await renderLib();
   }));
   $("#rules").querySelectorAll("[data-c]").forEach((el) => {
     const handler = run(async () => {
@@ -285,6 +409,7 @@ async function renderLib() {
     await data("POST", `/milestone-versions/${v.id}/rules`, { priority: p, name: "Luật mới", condition: "days_late_after_grace > 10", decision: "HOLD", reasonCode: "LATE_COMPLETION" });
     await renderLib();
   });
+  }
   if ($("#publish")) $("#publish").onclick = run(async () => { await data("POST", `/milestone-versions/${v.id}/publish`, { version: v.version }); toast("ok", "Đã công bố. Phiên bản cũ (nếu có) chuyển RETIRED."); S.selVersion = null; await loadLib(); });
 }
 
@@ -433,6 +558,13 @@ async function renderEvents(c, m) {
       <button class="btn" id="eAdd">Ghi sự kiện</button>
     </div><p class="hint">Trạng thái do máy tự điền theo loại sự kiện; bên ghi là bên của chính bạn.</p>`}</div>`;
   if (!$("#eType")) return;
+  const side = S.user.partyId === c.supplierId ? "SUPPLIER" : "BUYER";
+  const done = new Set(events.map((e) => e.eventTypeId));
+  const suggested = m.requiredEventTypeIds.map((id) => S.eventTypes.find((t) => t.id === id))
+    .find((t) => t && t.actorSide === side && !done.has(t.id)) ?? m.requiredEventTypeIds.map((id) => S.eventTypes.find((t) => t.id === id)).find((t) => t && t.actorSide === side);
+  const approval = S.eventTypes.find((t) => t.category === "APPROVAL" && t.active);
+  if (["FINANCE_APPROVER", "SECONDARY_APPROVER"].includes(S.user.role) && approval) $("#eType").value = approval.id;
+  else if (suggested) $("#eType").value = suggested.id;
   const syncRes = () => { $("#eResWrap").hidden = S.eventTypes.find((t) => t.id === +$("#eType").value)?.category !== "DISPUTE_RESOLVE"; };
   $("#eType").onchange = syncRes; syncRes();
   $("#eAdd").onclick = run(async () => {
@@ -453,9 +585,13 @@ async function start() {
   const own = S.parties.find((p) => p.id === S.user.partyId);
   S.org = own ? (own.type === "APPROVER" ? own.parentId : own.id) : null;
   $("#loginPage").hidden = true; $("#tabs").hidden = false;
-  $("#who").innerHTML = `${esc(S.user.fullName)} · ${esc(S.user.role)}${S.user.partyId ? " · " + esc(partyName(S.user.partyId)) : ""} · <a href="#" id="logout">Đăng xuất</a>`;
+  $("#who").innerHTML = `${esc(S.user.fullName)} · ${esc(S.user.role)}${S.user.partyId ? " · " + esc(partyName(S.user.partyId)) : ""}
+    · Đổi vai <select id="switchUser" style="font-size:12px;padding:2px 4px">${DEMO.map(([e, n]) => `<option value="${e}" ${e === S.user.email ? "selected" : ""}>${esc(n)}</option>`).join("")}
+      ${DEMO.some(([e]) => e === S.user.email) ? "" : `<option selected>${esc(S.user.email)}</option>`}</select>
+    · <a href="#" id="logout">Đăng xuất</a>`;
   $("#logout").onclick = (e) => { e.preventDefault(); logout(); };
-  showTab("lib");
+  $("#switchUser").onchange = run((e) => loginAs(e.target.value));
+  showTab(S.tab ?? "lib");
 }
 start();
 </script>
