@@ -9,6 +9,7 @@ import { MilestoneEvaluation, type EvaluationFacts } from "../models/milestone-e
 import { Milestone } from "../models/milestone.entity";
 import { Party } from "../models/party.entity";
 import { PaymentRule } from "../models/payment-rule.entity";
+import { PaymentService } from "./payment.service";
 import { percentOf } from "../utils/money";
 
 /** Where the Python engine lives (apps/engine) and which interpreter runs it. */
@@ -63,7 +64,10 @@ const bool = (value: boolean): string => (value ? "TRUE" : "FALSE");
 export class EngineService {
   private readonly logger = new Logger(EngineService.name);
 
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly payments: PaymentService,
+  ) {}
 
   /**
    * Judges `milestoneIds` (default: every milestone) of an ACTIVE contract and stores the results.
@@ -79,7 +83,10 @@ export class EngineService {
       ruleId: r.rule_id ? Number(r.rule_id) : null, decision: r.decision, reasonCode: r.reason_code, milestoneStatus: r.status,
       payableVndMn: r.payable, penaltyVndMn: r.penalty, facts: this.facts(r, codeToName),
     }));
-    return manager.getRepository(MilestoneEvaluation).save(rows);
+    const saved = await manager.getRepository(MilestoneEvaluation).save(rows);
+    // Open, keep or cancel the payment order of each milestone according to the new decision.
+    await this.payments.sync(saved, manager);
+    return saved;
   }
 
   /** Same, but an engine failure is logged instead of failing the action that triggered it (the event stays recorded). */
@@ -113,6 +120,7 @@ export class EngineService {
       where: { contractId }, relations: { milestoneVersion: true }, order: { position: "ASC" },
     });
     const events = await db.getRepository(Event).find({ where: { milestoneId: In(milestones.map((m) => m.id)) }, order: { happenedAt: "ASC", id: "ASC" } });
+    const paid = await this.payments.paidMilestoneIds(milestones.map((m) => m.id), db);
     const versionIds = [...new Set(milestones.map((m) => m.milestoneVersionId))];
     const rules = await db.getRepository(PaymentRule).find({ where: { milestoneVersionId: In(versionIds) }, order: { priority: "ASC" } });
     const parties = await db.getRepository(Party).find();
@@ -183,7 +191,8 @@ export class EngineService {
       event_types: Object.fromEntries(types.filter((t) => !DATA_PACK_CODES[t.name]).map((t) => [codeOf.get(t.id)!, {
         category: t.category, valid_status: t.validStatus, ...(t.actorSide ? { side: t.actorSide } : {}),
       }])),
-      milestone_ids: milestones.filter((m) => !only || only.includes(m.id)).map((m) => String(m.id)),
+      // A paid milestone is settled: it keeps the decision it was paid on.
+      milestone_ids: milestones.filter((m) => (!only || only.includes(m.id)) && !paid.has(m.id)).map((m) => String(m.id)),
     };
     return { request, codeToName };
   }

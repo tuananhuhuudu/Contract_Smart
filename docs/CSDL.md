@@ -17,7 +17,8 @@ Luồng: **tạo mốc (điều kiện + luật) → ghép mốc vào loại h�
 | 3. Loại hợp đồng | `contract_types`, `contract_type_milestones` | ✅ Đã dựng (chưa nạp dữ liệu) |
 | 4. Hợp đồng | `contracts`, `milestones`, `events` | ✅ Đã dựng (chưa nạp dữ liệu) |
 | 5. Chấm, chi tiền, nhật ký | `milestone_evaluations` | ✅ Đã dựng, engine đã nối |
-|  | `payments`, `audit_log` | ⏳ Chưa dựng |
+|  | `payments` | ✅ Đã dựng: lệnh chi, duyệt tài chính |
+|  | `audit_log` | ⏳ Chưa dựng |
 
 ## 2. Quy ước chung
 
@@ -298,9 +299,38 @@ Cách chạy: API (`src/services/engine.service.ts`) đọc các bảng, đổi 
 
 `GET /milestones/:id/evaluations` trả `{ rules, evaluations }`: lịch sử chấm (mới nhất trước) và bộ luật mốc đang dùng để đọc kết quả theo tên luật. Ai xem được hợp đồng thì xem được.
 
+### 6b.3 `payments`: Lệnh chi
+
+Hệ thống tự lập khi engine cho trả (RELEASE / PENALTY); chỉ **duyệt tài chính của bên mua** duyệt được; duyệt thì gửi cổng thanh toán (bản demo: mô phỏng, luôn nhận) và mốc thành đã chi.
+
+| Cột | Kiểu | Bắt buộc | Khóa | Ý nghĩa |
+| --- | --- | --- | --- | --- |
+| `id` | integer | ✓ | PK | Mã lệnh chi. |
+| `milestone_id` | integer | ✓ | FK → `milestones.id` | Mốc được chi. Mỗi mốc có tối đa **một** lệnh chưa hủy (index duy nhất có điều kiện). |
+| `evaluation_id` | integer | ✓ | FK → `milestone_evaluations.id` | Lần chấm làm căn cứ chi. |
+| `amount_vnd_mn` | numeric(18,2) | ✓ |  | Tiền chi (> 0), đã trừ phạt. |
+| `penalty_vnd_mn` | numeric(18,2) | ✓ |  | Tiền phạt đã trừ. |
+| `status` | text | ✓ | 'PENDING' |  | `PENDING` chờ duyệt chi, `PAID` đã chi, `CANCELLED` đã hủy. |
+| `approved_by` | uuid |  | FK → `users.id` | Người duyệt tài chính đã duyệt. |
+| `paid_at` | timestamptz |  |  | Lúc duyệt và gửi cổng. |
+| `gateway_ref` | text |  |  | Mã giao dịch cổng trả về (`SIM-...`). |
+| `note` | text | ✓ |  | Ví dụ lý do hủy. |
+| `version`, `created_at`, `updated_at` |  | ✓ |  | Như mọi bảng. |
+
+**Trigger `payments_guard`, `payments_no_truncate`:** không xóa, không TRUNCATE; chỉ đi `PENDING → PAID` hoặc `PENDING → CANCELLED`; đã chi hoặc đã hủy thì không sửa; mốc, lần chấm và số tiền không đổi được. CHECK: `PAID` thì phải có người duyệt, lúc chi và mã giao dịch.
+
+**Luồng:**
+
+| Lúc | Việc |
+| --- | --- |
+| Sau mỗi lần engine chấm | Cho trả mà chưa có lệnh → lập lệnh `PENDING`. Cho trả đúng số tiền của lệnh đang chờ → giữ nguyên. Không còn cho trả hoặc số tiền khác → hủy lệnh đang chờ (ghi lý do), cho trả thì lập lệnh mới. |
+| `POST /payments/:id/approve` | Chỉ `FINANCE_APPROVER` của bên mua; lệnh phải `PENDING` và khớp lần chấm mới nhất (`PAYMENT_STALE` nếu không); gửi cổng → `PAID`. Mọi mốc đã chi hoặc bị từ chối thì hợp đồng `ACTIVE → CLOSED`. |
+| Sau khi chi | Mốc đã chi không nhận thêm sự kiện (`MILESTONE_PAID`), engine không chấm lại mốc đó. |
+| `GET /payments` | Lệnh chi của hợp đồng thuộc tổ chức mình (nhà cung cấp cũng xem được); quản trị, kiểm toán thấy hết. |
+
 ## 7. Dữ liệu mẫu
 
-`pnpm db:seed` (trong `apps/api`) đọc `data/datapack/*.csv` của BTC và nạp lại từ đầu (xóa rồi nạp). Mã trong CSV (`B009`, `S021`...) chỉ dùng để nối dòng lúc nạp; DB giữ `id` tự sinh. Hiện nạp: **65 bên** (10 bên mua, 25 nhà cung cấp, 30 người phê duyệt), **9 tài khoản demo**, và **một quy trình mẫu nhỏ**: 4 mốc của loại hàng hóa (32 luật, đã công bố), loại hợp đồng "Cung cấp hàng hóa", hợp đồng CT0019 (Nova An mua của Phú Minh, ACTIVE, 14 sự kiện thật) và một hợp đồng DRAFT để thử. Sau khi nạp, engine chấm hợp đồng 1. Quyền `DISPUTE` trong CSV được đổi thành cả Mở tranh chấp và Đóng tranh chấp.
+`pnpm db:seed` (trong `apps/api`) đọc `data/datapack/*.csv` của BTC và nạp lại từ đầu (xóa rồi nạp). Mã trong CSV (`B009`, `S021`...) chỉ dùng để nối dòng lúc nạp; DB giữ `id` tự sinh. Hiện nạp: **65 bên** (10 bên mua, 25 nhà cung cấp, 30 người phê duyệt), **9 tài khoản demo**, và **một quy trình mẫu nhỏ**: 4 mốc của loại hàng hóa (32 luật, đã công bố), loại hợp đồng "Cung cấp hàng hóa", hợp đồng CT0019 (Nova An mua của Phú Minh, ACTIVE, 14 sự kiện thật) và một hợp đồng DRAFT để thử. Sau khi nạp, engine chấm hợp đồng 1 và tự lập 3 lệnh chi chờ duyệt. Quyền `DISPUTE` trong CSV được đổi thành cả Mở tranh chấp và Đóng tranh chấp.
 
 ## 8. Migration
 
@@ -311,6 +341,7 @@ Cách chạy: API (`src/services/engine.service.ts`) đọc các bảng, đổi 
 | `ContractTypes` | `contract_types`, `contract_type_milestones` |
 | `Contracts` | `contracts`, `milestones`, `events`, trigger khóa hợp đồng / mốc và sự kiện chỉ thêm |
 | `MilestoneEvaluations` | `milestone_evaluations`, trigger chỉ thêm |
+| `Payments` | `payments`, trigger khóa lệnh chi |
 
 ## 9. Lệnh thường dùng
 

@@ -7,6 +7,7 @@ import { Milestone } from "../models/milestone.entity";
 import { Party } from "../models/party.entity";
 import { EventRepository } from "../repositories/event.repository";
 import { EngineService } from "./engine.service";
+import { PaymentService } from "./payment.service";
 import type { CreateEventDto } from "../schemas/contract.schema";
 import { nowInVietnam } from "../utils/dates";
 import { assertCanSee } from "../core/security/access";
@@ -21,6 +22,7 @@ export class EventService {
   constructor(
     private readonly events: EventRepository,
     private readonly engine: EngineService,
+    private readonly payments: PaymentService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -43,6 +45,8 @@ export class EventService {
       const contract = await db.getRepository(Contract).findOneOrFail({ where: { id: milestone.contractId } });
       if (contract.status !== "ACTIVE")
         throw new ConflictException(`CONTRACT_NOT_ACTIVE: contract ${contract.id} is ${contract.status}; events are recorded only on an active contract`);
+      if ((await this.payments.paidMilestoneIds([milestone.id], db)).size)
+        throw new ConflictException(`MILESTONE_PAID: milestone ${milestone.id} is already paid; it takes no more events`);
 
       const type = await db.getRepository(EventType).findOne({ where: { id: dto.eventTypeId } });
       if (!type || !type.active) throw new BadRequestException(`Event type ${dto.eventTypeId} is not an active event type`);

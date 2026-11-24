@@ -25,6 +25,7 @@ import { percentOf, rescale, shareOf, splitByPercent, sumAmounts } from "../util
 import type { Paginated } from "../utils/paging";
 import { BaseService } from "./base.service";
 import { EngineService } from "./engine.service";
+import { PaymentService } from "./payment.service";
 import { MilestoneLibraryService } from "./milestone-library.service";
 
 export interface MilestoneRow {
@@ -50,6 +51,8 @@ export interface MilestoneRow {
     id: number; decision: string; reasonCode: string; milestoneStatus: string; payableVndMn: string; penaltyVndMn: string;
     ruleId: number | null; triggerEventId: number | null; evaluatedAt: Date;
   } | null;
+  /** The milestone's payment order: PENDING (waiting for the finance approver) or PAID; null if none. */
+  payment: { id: number; version: number; status: string; amountVndMn: string; penaltyVndMn: string; paidAt: Date | null; gatewayRef: string | null } | null;
 }
 export type ContractDetail = Omit<Contract, "milestones"> & {
   milestones: MilestoneRow[];
@@ -77,6 +80,7 @@ export class ContractService extends BaseService<Contract, "id"> {
     private readonly rules: PaymentRuleRepository,
     private readonly libraryService: MilestoneLibraryService,
     private readonly engine: EngineService,
+    private readonly payments: PaymentService,
     private readonly dataSource: DataSource,
   ) {
     super(repository);
@@ -105,8 +109,10 @@ export class ContractService extends BaseService<Contract, "id"> {
     const rows: MilestoneRow[] = [];
     const list = await this.milestones.listByContract(id, db);
     const latest = await this.engine.latest(list.map((m) => m.id), db);
+    const orders = await this.payments.current(list.map((m) => m.id), db);
     for (const m of list) {
       const e = latest.get(m.id);
+      const p = orders.get(m.id);
       const v = m.milestoneVersion;
       rows.push({
         id: m.id, version: m.version, position: m.position, milestoneId: v.milestoneId, name: v.milestone.name,
@@ -115,6 +121,7 @@ export class ContractService extends BaseService<Contract, "id"> {
         requiredEventTypeIds: v.requiredEventTypeIds, latePenalty: v.latePenalty, ruleCount: (await this.rules.listByVersion(v.id, db)).length,
         evaluation: e ? { id: e.id, decision: e.decision, reasonCode: e.reasonCode, milestoneStatus: e.milestoneStatus, payableVndMn: e.payableVndMn,
           penaltyVndMn: e.penaltyVndMn, ruleId: e.ruleId, triggerEventId: e.triggerEventId, evaluatedAt: e.evaluatedAt } : null,
+        payment: p ? { id: p.id, version: p.version, status: p.status, amountVndMn: p.amountVndMn, penaltyVndMn: p.penaltyVndMn, paidAt: p.paidAt, gatewayRef: p.gatewayRef } : null,
       });
     }
     const totalAmountVndMn = sumAmounts(rows.map((r) => r.amountVndMn));

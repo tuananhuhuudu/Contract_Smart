@@ -15,6 +15,7 @@ export const API_TAGS = [
   ["4.2 Mốc của hợp đồng", "Sửa %, hạn, thêm / bỏ mốc, luật riêng (khi hợp đồng DRAFT)."],
   ["4.3 Sự kiện", "Ghi và xem sự kiện của một mốc (khi hợp đồng ACTIVE)."],
   ["4.4 Kết quả chấm", "Engine chấm từng mốc: trả / giữ / từ chối / phạt, vì sao, luật nào; lịch sử chấm."],
+  ["4.5 Chi tiền", "Lệnh chi tự lập khi engine cho trả; duyệt tài chính bên mua duyệt thì chi (cổng thanh toán mô phỏng)."],
 ] as const;
 
 type TagName = (typeof API_TAGS)[number][0];
@@ -33,4 +34,5 @@ export const TAG = {
   contractMilestones: tag("4.2 Mốc của hợp đồng"),
   events: tag("4.3 Sự kiện"),
   evaluations: tag("4.4 Kết quả chấm"),
+  payments: tag("4.5 Chi tiền"),
 } as const;
