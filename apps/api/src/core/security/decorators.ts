@@ -13,7 +13,7 @@ export interface AuthUser {
 export const IS_PUBLIC = "isPublic";
 export const ROLES = "roles";
 
-/** The endpoint needs no login (login, register). */
+/** The endpoint needs no login (login). */
 export const Public = () => SetMetadata(IS_PUBLIC, true);
 
 /** Only these roles may call the endpoint (checked by AuthGuard after the token). */

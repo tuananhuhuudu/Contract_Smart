@@ -129,7 +129,7 @@ Hợp đồng còn quy định: được trễ 3 ngày; trễ hơn thì phạt 0
 ```
 ┌─ NỀN TẢNG: người vận hành hệ thống, không thuộc công ty nào ──────────┐
 │  Quản trị hệ thống      dựng quy trình: loại sự kiện, mốc, luật,        │
-│                         loại hợp đồng; quản lý tài khoản                │
+│                         loại hợp đồng; mở và khóa công ty               │
 │  Kiểm toán              chỉ xem; xem được mọi hợp đồng                  │
 └────────────────────────────────────────────────────────────────────────┘
 ┌─ BÊN MUA: người trả tiền (ví dụ Nova An) ──────────────────────────────┐
@@ -138,10 +138,12 @@ Hợp đồng còn quy định: được trễ 3 ngày; trễ hơn thì phạt 0
 │  Duyệt tài chính        phê duyệt; duyệt lệnh chi                       │
 │  Duyệt thứ hai          phê duyệt                                       │
 │  Kiểm soát viên         duyệt ngoại lệ                                  │
+│  Quản trị công ty       tạo, đổi vai, khóa tài khoản nhân viên          │
 └────────────────────────────────────────────────────────────────────────┘
 ┌─ BÊN BÁN: người nhận tiền (ví dụ Phú Minh) ────────────────────────────┐
 │  Nhà cung cấp           ghi chứng từ của mình: giao hàng, hóa đơn...     │
 │  Kiểm soát viên         theo dõi bên mua chi đúng hợp đồng              │
+│  Quản trị công ty       tạo, đổi vai, khóa tài khoản nhân viên          │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -149,7 +151,8 @@ Hợp đồng còn quy định: được trễ 3 ngày; trễ hơn thì phạt 0
 
 | Vai | Ngoài đời tương ứng | Được làm | Không được làm |
 | --- | --- | --- | --- |
-| **Quản trị hệ thống** | Bộ phận IT / vận hành nền tảng | Tạo loại sự kiện, mốc mẫu, luật, loại hợp đồng; công bố phiên bản; quản lý tài khoản ⏳ | Tạo hợp đồng, ghi sự kiện, duyệt chi, xử lý ngoại lệ |
+| **Quản trị hệ thống** | Bộ phận IT / vận hành nền tảng | Tạo loại sự kiện, mốc mẫu, luật, loại hợp đồng; công bố phiên bản; **mở công ty** kèm quản trị công ty đầu tiên; khóa công ty | Tạo hợp đồng, ghi sự kiện, duyệt chi, xử lý ngoại lệ; **tạo nhân viên thay công ty** |
+| **Quản trị công ty** (mỗi công ty) | Bộ phận nhân sự / IT của công ty | Tạo, đổi vai, khóa, đặt lại mật khẩu **nhân viên công ty mình**, chỉ với vai hợp loại công ty | Đụng tới công ty khác; tự đổi vai hay tự khóa mình; soạn, duyệt, chi hợp đồng |
 | **Kiểm toán** | Kiểm toán nội bộ / độc lập | Xem mọi hợp đồng, sự kiện, kết quả chấm | Mọi thao tác ghi |
 | **Pháp lý** (bên mua) | Phòng pháp chế | Tạo và sửa hợp đồng nháp; dùng luật riêng; ghi chứng từ phía bên mua (ký hợp đồng, nghiệm thu) | Ký / kích hoạt; phê duyệt |
 | **Chủ hợp đồng** (bên mua) | Trưởng bộ phận phụ trách hợp đồng | Như pháp lý, thêm **ký / kích hoạt** và **phê duyệt** | Tự duyệt ngoại lệ do mình đề xuất ⏳ |
@@ -174,8 +177,10 @@ Mật khẩu chung `Passw0rd!`. Trên giao diện thử có nút đăng nhập n
 | Nova An: duyệt tài chính | Duyệt tài chính | Nova An |
 | Nova An: duyệt thứ hai | Duyệt thứ hai | Nova An |
 | Nova An: kiểm soát | Kiểm soát viên | Nova An |
+| Nova An: quản trị công ty | Quản trị công ty | Nova An |
 | Phú Minh: nhà cung cấp | Nhà cung cấp | Phú Minh (bên bán) |
 | Phú Minh: kiểm soát | Kiểm soát viên | Phú Minh |
+| Phú Minh: quản trị công ty | Quản trị công ty | Phú Minh |
 
 ### 3.4. Hai tầng kiểm quyền
 
@@ -380,7 +385,6 @@ Hệ thống kiểm: mọi mốc đã công bố; tổng **đúng 100%**. Chưa 
 | Việc | Trạng thái |
 | --- | --- |
 | **Kiểm an toàn bộ luật** trước khi công bố. Ví dụ người dùng đặt luật "Đủ chứng từ thì trả tiền" **trước** luật "Đang tranh chấp thì giữ tiền" → mốc đang tranh chấp vẫn được trả. Hệ thống cần phát hiện và chặn | ⏳ |
-| Màn hình **quản lý tài khoản**: tạo, khóa, gán vai trò, gán công ty (hiện tài khoản được nạp sẵn) | ⏳ |
 
 ---
 
@@ -1042,7 +1046,7 @@ Kèm theo: đăng nhập, phân quyền theo vai và theo công ty, khóa dữ l
 | 3 | **Xử lý ngoại lệ** hai người duyệt | Gỡ các mốc bị kẹt do ghi nhầm |
 | 4 | **Chứng từ có file**, kiểm hóa đơn | Chứng từ có giá trị thật thay vì chỉ một dòng chữ |
 | 5 | **Phụ lục, thanh lý** | Hoàn tất vòng đời hợp đồng |
-| 6 | Kiểm an toàn bộ luật, quản lý tài khoản | Chặn cấu hình sai từ gốc |
+| 6 | Kiểm an toàn bộ luật | Chặn cấu hình sai từ gốc |
 | 7 | Việc cần làm, dashboard, cảnh báo trình tự, AI đọc PDF | Tiện ích, làm khi còn thời gian |
 
 **Song song (yêu cầu của môn học):** chuyển giao diện sang **React + Vite**; viết ít nhất **15 test** (Vitest / React Testing Library), độ phủ **≥ 50%**.

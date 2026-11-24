@@ -2,12 +2,21 @@ import { CanActivate, ExecutionContext, ForbiddenException, Injectable, Unauthor
 import { Reflector } from "@nestjs/core";
 import { JwtService } from "@nestjs/jwt";
 import { DataSource } from "typeorm";
+import { Party } from "../../models/party.entity";
 import { User, type UserRole } from "../../models/user.entity";
 import { IS_PUBLIC, ROLES, type AuthUser } from "./decorators";
 
 /** What the token carries; the role and party are read again from the database on every request. */
 export interface TokenPayload {
   sub: string;
+}
+
+/** False when the user's company (or, for an approver, the buyer it belongs to) is locked. */
+export async function companyActive(dataSource: DataSource, partyId: number | null): Promise<boolean> {
+  if (partyId === null) return true;
+  const party = await dataSource.getRepository(Party).findOneOrFail({ where: { id: partyId } });
+  if (party.parentId === null) return party.active;
+  return (await dataSource.getRepository(Party).findOneOrFail({ where: { id: party.parentId } })).active;
 }
 
 /**
@@ -37,6 +46,7 @@ export class AuthGuard implements CanActivate {
     }
     const user = await this.dataSource.getRepository(User).findOne({ where: { id: payload.sub } });
     if (!user || !user.active) throw new UnauthorizedException("ACCOUNT_DISABLED");
+    if (!(await companyActive(this.dataSource, user.partyId))) throw new UnauthorizedException("ORGANIZATION_DISABLED");
     request.user = { id: user.id, email: user.email, fullName: user.fullName, role: user.role, partyId: user.partyId };
 
     const roles = this.reflector.getAllAndOverride<UserRole[] | undefined>(ROLES, targets);

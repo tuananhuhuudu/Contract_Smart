@@ -79,13 +79,14 @@ Bên mua, nhà cung cấp, người phê duyệt của bên mua. Là **công ty 
 | `email` | text | ✓ |  | UNIQUE | Email đăng nhập, chữ thường. |
 | `password_hash` | text | ✓ |  |  | Mật khẩu đã băm; API không bao giờ trả cột này. |
 | `full_name` | text | ✓ |  |  | Họ tên. |
-| `role` | text | ✓ |  |  | CONTRACT_OWNER, LEGAL_REVIEWER, FINANCE_APPROVER, SECONDARY_APPROVER, ADMIN_AUDITOR, SUPPLIER, SYSTEM_ADMIN, AUDITOR. |
+| `role` | text | ✓ |  |  | CONTRACT_OWNER, LEGAL_REVIEWER, FINANCE_APPROVER, SECONDARY_APPROVER, ADMIN_AUDITOR, SUPPLIER, ORG_ADMIN (quản trị công ty), SYSTEM_ADMIN, AUDITOR. |
 | `party_id` | integer |  |  | FK → `parties.id` | Bên mà người dùng làm việc cho; NULL với SYSTEM_ADMIN, AUDITOR. |
 | `active` | boolean | ✓ | true |  | FALSE: khóa tài khoản. |
+| `created_by` | uuid |  |  | FK → `users.id` | Ai tạo tài khoản; NULL với tài khoản nạp sẵn. |
 
 **Ràng buộc:** SYSTEM_ADMIN, AUDITOR **không** có bên, các vai trò khác **bắt buộc** có; email viết thường, đúng dạng, không trùng.
 
-**Đăng nhập:** `POST /auth/login` trả JWT (8 giờ); mọi API khác cần `Authorization: Bearer <token>` (trên Swagger: nút **Authorize**). Mỗi lần gọi, API đọc lại người dùng từ DB, nên khóa tài khoản hay đổi vai trò có hiệu lực ngay. `POST /auth/register` tạo tài khoản **AUDITOR, không có bên** (chỉ xem) cho tới khi quản trị gán vai trò.
+**Đăng nhập:** `POST /auth/login` trả JWT (8 giờ); mọi API khác cần `Authorization: Bearer <token>` (trên Swagger: nút **Authorize**). Mỗi lần gọi, API đọc lại người dùng từ DB, nên khóa tài khoản hay đổi vai trò có hiệu lực ngay. Không có tự đăng ký: tài khoản do quản trị tạo (bên dưới). Ai cũng tự đổi mật khẩu được (`POST /auth/change-password`). Công ty bị khóa thì nhân viên của nó không đăng nhập được.
 
 **Phân quyền** (kiểm ở API: `@Roles` trên từng endpoint và `src/core/security/access.ts`):
 
@@ -96,7 +97,11 @@ Bên mua, nhà cung cấp, người phê duyệt của bên mua. Là **công ty 
 | Tạo hợp đồng (bên mua phải là tổ chức mình), sửa khi DRAFT, thêm / bỏ mốc, luật riêng | `CONTRACT_OWNER`, `LEGAL_REVIEWER` của bên mua |
 | Ký / kích hoạt | `CONTRACT_OWNER` của bên mua |
 | Ghi sự kiện | `SUPPLIER`, `LEGAL_REVIEWER`, `CONTRACT_OWNER`, `FINANCE_APPROVER`, `SECONDARY_APPROVER` thuộc một bên của hợp đồng; **bên ghi lấy từ người đăng nhập** (`party_id`), `recorded_by` = người đó |
-| Tự đăng ký | Tài khoản `AUDITOR` không có bên (chỉ xem) |
+| Mở công ty (bên mua / nhà cung cấp) kèm quản trị công ty đầu tiên; khóa / mở khóa công ty | `SYSTEM_ADMIN` |
+| Tạo tài khoản nền tảng (`SYSTEM_ADMIN`, `AUDITOR`), thêm quản trị cho một công ty | `SYSTEM_ADMIN` |
+| Tạo, đổi vai, khóa, đặt lại mật khẩu **nhân viên công ty mình** | `ORG_ADMIN` (quản trị công ty); bên mua cấp được pháp lý, chủ hợp đồng, duyệt tài chính, duyệt thứ hai, kiểm soát, quản trị công ty; nhà cung cấp cấp được nhà cung cấp, kiểm soát, quản trị công ty. Không tự đổi vai hay tự khóa mình. Không tham gia nghiệp vụ hợp đồng |
+| Duyệt chi | `FINANCE_APPROVER` của bên mua |
+| Đổi mật khẩu của mình | Mọi người |
 
 **Tài khoản demo** (nạp bởi `pnpm db:seed`, mật khẩu `SEED_PASSWORD` trong `apps/api/.env`, để trống thì là `Passw0rd!`):
 
@@ -111,6 +116,8 @@ Bên mua, nhà cung cấp, người phê duyệt của bên mua. Là **công ty 
 | controller@novaan.vn | ADMIN_AUDITOR | Nova An Business JSC |
 | supplier@phuminh.vn | SUPPLIER | Phú Minh Technology JSC (nhà cung cấp) |
 | controller@phuminh.vn | ADMIN_AUDITOR | Phú Minh Technology JSC |
+| admin@novaan.vn | ORG_ADMIN | Nova An Business JSC |
+| admin@phuminh.vn | ORG_ADMIN | Phú Minh Technology JSC |
 
 ## 4. Nhóm 2: thư viện mốc
 
@@ -342,6 +349,7 @@ Hệ thống tự lập khi engine cho trả (RELEASE / PENALTY); chỉ **duyệ
 | `Contracts` | `contracts`, `milestones`, `events`, trigger khóa hợp đồng / mốc và sự kiện chỉ thêm |
 | `MilestoneEvaluations` | `milestone_evaluations`, trigger chỉ thêm |
 | `Payments` | `payments`, trigger khóa lệnh chi |
+| `OrgAdmins` | vai `ORG_ADMIN`, cột `users.created_by` |
 
 ## 9. Lệnh thường dùng
 

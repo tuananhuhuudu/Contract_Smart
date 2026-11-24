@@ -68,6 +68,7 @@
     <button data-tab="lib" class="on">1. Thư viện mốc</button>
     <button data-tab="types">2. Loại hợp đồng</button>
     <button data-tab="contracts">3. Hợp đồng &amp; sự kiện</button>
+    <button data-tab="accounts" hidden>4. Tài khoản</button>
   </nav>
   <span class="who" id="who"></span>
 </header>
@@ -112,6 +113,12 @@
       </div>
       <div class="card" id="typeDetail"><p class="hint">Chọn một loại hợp đồng bên trái.</p></div>
     </div>
+  </section>
+
+  <!-- 4. Accounts -->
+  <section data-page="accounts" hidden>
+    <div class="card" id="accTop"></div>
+    <div class="card" style="margin-top:12px" id="accUsers"></div>
   </section>
 
   <!-- 3. Contracts -->
@@ -165,6 +172,7 @@ const DEMO = [
   ["finance@novaan.vn", "Nova An: duyệt tài chính"], ["secondary@novaan.vn", "Nova An: duyệt thứ hai"],
   ["controller@novaan.vn", "Nova An: kiểm soát"], ["supplier@phuminh.vn", "Phú Minh: nhà cung cấp"],
   ["controller@phuminh.vn", "Phú Minh: kiểm soát"],
+  ["admin@novaan.vn", "Nova An: quản trị công ty"], ["admin@phuminh.vn", "Phú Minh: quản trị công ty"],
 ];
 /** One click logs in as a demo account (development data, password from the seed). */
 async function loginAs(email, password = "Passw0rd!") {
@@ -191,7 +199,7 @@ function showTab(name) {
   S.tab = name;
   document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x.dataset.tab === name));
   document.querySelectorAll("[data-page]").forEach((s) => s.hidden = s.dataset.page !== name);
-  ({ lib: loadLib, types: loadTypes, contracts: loadContracts })[name]();
+  ({ lib: loadLib, types: loadTypes, contracts: loadContracts, accounts: loadAccounts })[name]();
 }
 document.querySelectorAll("#tabs button").forEach((b) => b.onclick = run(() => showTab(b.dataset.tab)));
 
@@ -706,6 +714,103 @@ async function renderPayments(c) {
     </table></div></details>`;
 }
 
+// ================= 4. Accounts =================
+const ROLE_NAME = {
+  SYSTEM_ADMIN: "Quản trị hệ thống", AUDITOR: "Kiểm toán", ORG_ADMIN: "Quản trị công ty", LEGAL_REVIEWER: "Pháp lý", CONTRACT_OWNER: "Chủ hợp đồng",
+  FINANCE_APPROVER: "Duyệt tài chính", SECONDARY_APPROVER: "Duyệt thứ hai", ADMIN_AUDITOR: "Kiểm soát", SUPPLIER: "Nhà cung cấp",
+};
+/** Roles a company administrator may give, by company type (the API checks the same list). */
+const ROLES_BY_COMPANY = {
+  BUYER: ["LEGAL_REVIEWER", "CONTRACT_OWNER", "FINANCE_APPROVER", "SECONDARY_APPROVER", "ADMIN_AUDITOR", "ORG_ADMIN"],
+  SUPPLIER: ["SUPPLIER", "ADMIN_AUDITOR", "ORG_ADMIN"],
+};
+const roleOptions = (roles, sel) => roles.map((x) => `<option value="${x}" ${x === sel ? "selected" : ""}>${esc(ROLE_NAME[x])}</option>`).join("");
+
+async function loadAccounts() {
+  S.parties = await data("GET", "/parties?pageSize=100&sortBy=id&order=asc");
+  if (S.user.role === "SYSTEM_ADMIN") await renderCompanies(); else await renderOrgAdmin();
+  await renderUsers();
+}
+
+/** Platform administrator: open a company with its administrator; lock or unlock companies. */
+async function renderCompanies() {
+  const companies = S.parties.filter((p) => p.type !== "APPROVER");
+  $("#accTop").innerHTML = `<h2 style="margin-top:0">Công ty</h2>
+    <p class="hint">Quản trị hệ thống chỉ <b>mở công ty</b> kèm <b>một tài khoản quản trị công ty</b>. Nhân viên do quản trị của từng công ty tự tạo. Khóa công ty thì mọi nhân viên của công ty đó không đăng nhập được.</p>
+    <div class="grid">
+      <label>Tên công ty<input id="oName" placeholder="Công ty ABC"></label>
+      <label>Loại<select id="oType"><option value="BUYER">Bên mua</option><option value="SUPPLIER">Nhà cung cấp</option></select></label>
+      <label>Email quản trị công ty<input id="oEmail" placeholder="admin@abc.vn"></label>
+      <label>Tên quản trị công ty<input id="oAdmin" placeholder="Nguyễn Văn A"></label>
+      <label>Mật khẩu ban đầu (≥ 8 ký tự)<input id="oPw" value="Passw0rd!"></label>
+      <button class="btn" id="oAdd">+ Mở công ty</button>
+    </div>
+    <details style="margin-top:10px"><summary>Danh sách ${companies.length} công ty</summary>
+      <div class="scroll"><table><tr><th>id</th><th>Tên</th><th>Loại</th><th>Trạng thái</th><th></th></tr>
+      ${companies.map((p) => `<tr><td>${p.id}</td><td>${esc(p.name)}</td><td>${p.type === "BUYER" ? "Bên mua" : "Nhà cung cấp"}</td>
+        <td>${p.active ? tag("ACTIVE") : `<span class="tag REJECTED">ĐÃ KHÓA</span>`}</td>
+        <td><button class="btn sec small" data-org="${p.id}" data-v="${p.version}" data-on="${p.active ? 0 : 1}">${p.active ? "Khóa" : "Mở khóa"}</button>
+          <button class="btn sec small" data-orgusers="${p.id}">Xem tài khoản</button></td></tr>`).join("")}</table></div></details>`;
+  $("#oAdd").onclick = run(async () => {
+    const r = await data("POST", "/organizations", { name: $("#oName").value, type: $("#oType").value, adminEmail: $("#oEmail").value, adminName: $("#oAdmin").value, adminPassword: $("#oPw").value });
+    toast("ok", `Đã mở "${r.organization.name}" và tài khoản quản trị ${r.admin.email}.`); await loadAccounts();
+  });
+  $("#accTop").querySelectorAll("[data-org]").forEach((b) => b.onclick = run(async () => {
+    await data("PATCH", `/organizations/${b.dataset.org}`, { version: +b.dataset.v, active: b.dataset.on === "1" }); await loadAccounts();
+  }));
+  $("#accTop").querySelectorAll("[data-orgusers]").forEach((b) => b.onclick = run(async () => { S.accOrg = +b.dataset.orgusers; await renderUsers(); }));
+}
+
+/** Company administrator: create staff of their own company. */
+async function renderOrgAdmin() {
+  const company = S.parties.find((p) => p.id === S.org);
+  const roles = ROLES_BY_COMPANY[company.type];
+  $("#accTop").innerHTML = `<h2 style="margin-top:0">Nhân viên của ${esc(company.name)}</h2>
+    <p class="hint">Bạn là <b>quản trị công ty</b>: tạo, đổi vai, khóa tài khoản nhân viên của công ty mình. Bạn không soạn, duyệt hay chi hợp đồng.
+      ${company.type === "BUYER" ? "Công ty bên mua cấp được: pháp lý, chủ hợp đồng, duyệt tài chính, duyệt thứ hai, kiểm soát, quản trị công ty." : "Công ty nhà cung cấp cấp được: nhà cung cấp, kiểm soát, quản trị công ty."}</p>
+    <div class="grid">
+      <label>Email<input id="uEmail" placeholder="ten@congty.vn"></label>
+      <label>Họ tên<input id="uName"></label>
+      <label>Vai trò<select id="uRole">${roleOptions(roles)}</select></label>
+      <label>Mật khẩu ban đầu (≥ 8 ký tự)<input id="uPw" value="Passw0rd!"></label>
+      <button class="btn" id="uAdd">+ Tạo tài khoản</button>
+    </div>`;
+  $("#uAdd").onclick = run(async () => {
+    const u = await data("POST", "/users", { email: $("#uEmail").value, fullName: $("#uName").value, role: $("#uRole").value, password: $("#uPw").value });
+    toast("ok", `Đã tạo ${u.email} (${ROLE_NAME[u.role]}).`); $("#uEmail").value = ""; $("#uName").value = ""; await renderUsers();
+  });
+}
+
+/** Accounts in scope, with role change, lock / unlock and password reset where the user may manage them. */
+async function renderUsers() {
+  const sys = S.user.role === "SYSTEM_ADMIN";
+  const q = sys && S.accOrg ? `&organizationId=${S.accOrg}` : "";
+  const users = await data("GET", `/users?pageSize=100${q}`);
+  const company = S.parties.find((p) => p.id === S.org);
+  const canManage = (u) => u.id !== S.user.id && (sys ? (u.organizationId === null || u.role === "ORG_ADMIN") : true);
+  $("#accUsers").innerHTML = `<h2 style="margin-top:0">Tài khoản ${sys && S.accOrg ? `của ${esc(partyName(S.accOrg))} <button class="btn sec small" id="accAll">xem tất cả</button>` : ""}</h2>
+    ${sys ? `<p class="hint">Quản trị hệ thống chỉ sửa được tài khoản nền tảng và quản trị công ty; nhân viên của công ty do quản trị công ty đó quản lý.</p>` : ""}
+    <div class="scroll"><table><tr><th>Email</th><th>Họ tên</th><th>Vai trò</th><th>Công ty</th><th>Trạng thái</th><th></th></tr>
+    ${users.map((u) => `<tr data-id="${u.id}" data-v="${u.version}"><td>${esc(u.email)}${u.id === S.user.id ? " <small>(bạn)</small>" : ""}</td><td>${esc(u.fullName)}</td>
+      <td>${!sys && canManage(u) ? `<select data-role>${roleOptions(ROLES_BY_COMPANY[company.type], u.role)}</select>` : esc(ROLE_NAME[u.role] ?? u.role)}</td>
+      <td>${esc(u.organizationName ?? "— nền tảng —")}</td><td>${u.active ? tag("ACTIVE") : `<span class="tag REJECTED">ĐÃ KHÓA</span>`}</td>
+      <td style="white-space:nowrap">${canManage(u) ? `<button class="btn sec small" data-lock="${u.active ? 0 : 1}">${u.active ? "Khóa" : "Mở khóa"}</button>
+        <button class="btn sec small" data-reset>Đặt lại mật khẩu</button>` : ""}</td></tr>`).join("") || `<tr><td colspan="6" class="hint">Chưa có tài khoản.</td></tr>`}</table></div>`;
+  if ($("#accAll")) $("#accAll").onclick = run(async () => { S.accOrg = null; await renderUsers(); });
+  const row = (el) => el.closest("tr");
+  $("#accUsers").querySelectorAll("[data-role]").forEach((el) => el.onchange = run(async () => {
+    const tr = row(el); const u = await data("PATCH", `/users/${tr.dataset.id}`, { version: +tr.dataset.v, role: el.value });
+    toast("ok", `${u.email} giờ là ${ROLE_NAME[u.role]}.`); await renderUsers();
+  }));
+  $("#accUsers").querySelectorAll("[data-lock]").forEach((b) => b.onclick = run(async () => {
+    const tr = row(b); await data("PATCH", `/users/${tr.dataset.id}`, { version: +tr.dataset.v, active: b.dataset.lock === "1" }); await renderUsers();
+  }));
+  $("#accUsers").querySelectorAll("[data-reset]").forEach((b) => b.onclick = run(async () => {
+    const password = prompt("Mật khẩu mới cho tài khoản này (ít nhất 8 ký tự)"); if (!password) return;
+    const u = await data("POST", `/users/${row(b).dataset.id}/reset-password`, { password }); toast("ok", `Đã đặt lại mật khẩu cho ${u.email}.`); await renderUsers();
+  }));
+}
+
 // ---------------- Start ----------------
 async function start() {
   if (!TOKEN) return logout();
@@ -718,10 +823,19 @@ async function start() {
   $("#who").innerHTML = `${esc(S.user.fullName)} · ${esc(S.user.role)}${S.user.partyId ? " · " + esc(partyName(S.user.partyId)) : ""}
     · Đổi vai <select id="switchUser" style="font-size:12px;padding:2px 4px">${DEMO.map(([e, n]) => `<option value="${e}" ${e === S.user.email ? "selected" : ""}>${esc(n)}</option>`).join("")}
       ${DEMO.some(([e]) => e === S.user.email) ? "" : `<option selected>${esc(S.user.email)}</option>`}</select>
-    · <a href="#" id="logout">Đăng xuất</a>`;
+    · <a href="#" id="changePw">Đổi mật khẩu</a> · <a href="#" id="logout">Đăng xuất</a>`;
   $("#logout").onclick = (e) => { e.preventDefault(); logout(); };
   $("#switchUser").onchange = run((e) => loginAs(e.target.value));
-  showTab(S.tab ?? "lib");
+  $("#changePw").onclick = run(async (e) => {
+    e.preventDefault();
+    const currentPassword = prompt("Mật khẩu hiện tại"); if (!currentPassword) return;
+    const newPassword = prompt("Mật khẩu mới (ít nhất 8 ký tự)"); if (!newPassword) return;
+    await api("POST", "/auth/change-password", { currentPassword, newPassword }); toast("ok", "Đã đổi mật khẩu.");
+  });
+  const manages = ["SYSTEM_ADMIN", "ORG_ADMIN"].includes(S.user.role);
+  document.querySelector('[data-tab="accounts"]').hidden = !manages;
+  if (S.tab === "accounts" && !manages) S.tab = null;
+  showTab(S.tab ?? (S.user.role === "ORG_ADMIN" ? "accounts" : "lib"));
 }
 start();
 </script>

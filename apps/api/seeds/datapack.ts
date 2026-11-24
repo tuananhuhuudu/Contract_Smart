@@ -101,6 +101,8 @@ async function main(): Promise<void> {
       ["controller@novaan.vn", "Đỗ Minh Khoa", "ADMIN_AUDITOR", "B010"],
       ["supplier@phuminh.vn", "Hoàng Văn Phú", "SUPPLIER", "S015"],
       ["controller@phuminh.vn", "Vũ Thị Lan", "ADMIN_AUDITOR", "S015"],
+      ["admin@novaan.vn", "Ngô Thanh Hà", "ORG_ADMIN", "B010"],
+      ["admin@phuminh.vn", "Bùi Văn Nam", "ORG_ADMIN", "S015"],
     ];
     for (const [email, fullName, role, code] of accounts)
       await db.query(`INSERT INTO users (email, password_hash, full_name, role, party_id) VALUES ($1, $2, $3, $4, $5)`,

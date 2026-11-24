@@ -14,19 +14,3 @@ export class LoginDto {
   @Length(1, 200)
   password!: string;
 }
-
-/** POST /auth/register: a read-only account (AUDITOR) until an administrator gives it a role and a party. */
-export class RegisterDto {
-  @Transform(lower)
-  @IsEmail()
-  email!: string;
-
-  /** At least 8 characters. */
-  @IsString()
-  @Length(8, 200)
-  password!: string;
-
-  @IsString()
-  @Length(1, 200)
-  fullName!: string;
-}

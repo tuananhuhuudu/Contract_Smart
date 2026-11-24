@@ -2,13 +2,18 @@ import { Body, Controller, Get, HttpCode, Post } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { TAG } from "../../core/api-tags";
 import { CurrentUser, Public, type AuthUser } from "../../core/security/decorators";
-import { LoginDto, RegisterDto } from "../../schemas/auth.schema";
+import { ChangePasswordDto } from "../../schemas/account.schema";
+import { LoginDto } from "../../schemas/auth.schema";
+import { AccountService } from "../../services/account.service";
 import { AuthService } from "../../services/auth.service";
 
 @ApiTags(TAG.auth)
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly service: AuthService) {}
+  constructor(
+    private readonly service: AuthService,
+    private readonly accounts: AccountService,
+  ) {}
 
   @Public()
   @Post("login")
@@ -18,11 +23,12 @@ export class AuthController {
     return this.service.login(dto);
   }
 
-  @Public()
-  @Post("register")
-  @ApiOperation({ summary: "Tự đăng ký: tài khoản chỉ xem (AUDITOR) cho tới khi quản trị gán vai trò" })
-  register(@Body() dto: RegisterDto) {
-    return this.service.register(dto);
+  @Post("change-password")
+  @HttpCode(204)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: "Tự đổi mật khẩu của mình (cần mật khẩu hiện tại)" })
+  async changePassword(@Body() dto: ChangePasswordDto, @CurrentUser() user: AuthUser) {
+    await this.accounts.changeOwnPassword(dto, user);
   }
 
   @Get("me")

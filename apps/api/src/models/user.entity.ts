@@ -10,7 +10,17 @@ export const PARTY_ROLES = [
   "SECONDARY_APPROVER",
   "ADMIN_AUDITOR",
   "SUPPLIER",
+  "ORG_ADMIN",
 ] as const;
+/**
+ * Roles a company's administrator (ORG_ADMIN) may give to its own staff, by company type. Buyers have
+ * the people who draft, approve and pay; suppliers the people who submit evidence. ORG_ADMIN manages
+ * accounts only and takes no part in contracts.
+ */
+export const ROLES_BY_COMPANY = {
+  BUYER: ["LEGAL_REVIEWER", "CONTRACT_OWNER", "FINANCE_APPROVER", "SECONDARY_APPROVER", "ADMIN_AUDITOR", "ORG_ADMIN"],
+  SUPPLIER: ["SUPPLIER", "ADMIN_AUDITOR", "ORG_ADMIN"],
+} as const satisfies Record<string, readonly (typeof PARTY_ROLES)[number][]>;
 /** Platform roles: they belong to no party. */
 export const PLATFORM_ROLES = ["SYSTEM_ADMIN", "AUDITOR"] as const;
 export const USER_ROLES = [...PARTY_ROLES, ...PLATFORM_ROLES] as const;
@@ -54,6 +64,13 @@ export class User extends BaseModel {
 
   @Column({ type: "boolean", default: true, comment: "FALSE: tài khoản bị khóa, không đăng nhập được." })
   active!: boolean;
+
+  @Column({ name: "created_by", type: "uuid", nullable: true, comment: "Ai tạo tài khoản này (users.id); NULL với tài khoản nạp sẵn." })
+  createdBy!: string | null;
+
+  @ManyToOne(() => User, { onDelete: "RESTRICT", nullable: true })
+  @JoinColumn({ name: "created_by", foreignKeyConstraintName: "users_created_by_fkey" })
+  creator!: User | null;
 
   @ManyToOne(() => Party, { onDelete: "RESTRICT" })
   @JoinColumn({ name: "party_id", foreignKeyConstraintName: "users_party_fkey" })
