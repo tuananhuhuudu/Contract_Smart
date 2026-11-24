@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import dataSource from "../src/core/data-source";
 import { hashPassword } from "../src/core/security/password";
+import { EngineService } from "../src/services/engine.service";
 
 const DATA_DIR = path.join(__dirname, "..", "..", "..", "data", "datapack");
 
@@ -62,10 +63,10 @@ async function main(): Promise<void> {
 
     // Empty every table the seed fills. The lock triggers (append-only events, published versions,
     // active contracts) are switched off for this statement only, inside the same transaction.
-    const guarded = ["events", "milestones", "contracts", "payment_rules", "milestone_versions"];
+    const guarded = ["milestone_evaluations", "events", "milestones", "contracts", "payment_rules", "milestone_versions"];
     for (const t of guarded) await db.query(`ALTER TABLE ${t} DISABLE TRIGGER USER`);
     await db.query(`TRUNCATE parties, users, milestone_library, milestone_versions, payment_rules,
-      contract_types, contract_type_milestones, contracts, milestones, events RESTART IDENTITY`);
+      contract_types, contract_type_milestones, contracts, milestones, events, milestone_evaluations RESTART IDENTITY`);
     for (const t of guarded) await db.query(`ALTER TABLE ${t} ENABLE TRIGGER USER`);
 
     // ---------- Group 1: parties (buyers and suppliers first, approvers point at their buyer) ----------
@@ -184,6 +185,9 @@ async function main(): Promise<void> {
       await db.query(
         `INSERT INTO milestones (contract_id, position, milestone_version_id, amount_vnd_mn, due_on) VALUES ($1, $2, $3, $4, $5)`,
         [c2, i + 1, versionOf.get(m.release_rule_code), shares[i], addDays(today, daysAfterStart(m.due_date))]);
+    // The engine judges contract 1 once, as the API does when a contract is activated.
+    const judged = await new EngineService(dataSource).evaluateContract(c1, {}, db);
+    console.log(`engine: ${judged.map((e) => `${e.milestoneId} ${e.decision} ${e.reasonCode}`).join("; ")}`);
     console.log(`sample: ${msRows.length} milestones in the library (${ruleRows.filter((r) => versionOf.has(r.release_rule_code)).length} rules), 1 contract type, contract ${c1} ACTIVE with ${eventRows.length} events, contract ${c2} DRAFT`);
   });
   await dataSource.destroy();

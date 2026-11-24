@@ -24,6 +24,7 @@ import type { AuthUser } from "../core/security/decorators";
 import { percentOf, rescale, shareOf, splitByPercent, sumAmounts } from "../utils/money";
 import type { Paginated } from "../utils/paging";
 import { BaseService } from "./base.service";
+import { EngineService } from "./engine.service";
 import { MilestoneLibraryService } from "./milestone-library.service";
 
 export interface MilestoneRow {
@@ -44,6 +45,11 @@ export interface MilestoneRow {
   requiredEventTypeIds: number[];
   latePenalty: boolean;
   ruleCount: number;
+  /** The newest engine decision for this milestone; null before activation. */
+  evaluation: {
+    id: number; decision: string; reasonCode: string; milestoneStatus: string; payableVndMn: string; penaltyVndMn: string;
+    ruleId: number | null; triggerEventId: number | null; evaluatedAt: Date;
+  } | null;
 }
 export type ContractDetail = Omit<Contract, "milestones"> & {
   milestones: MilestoneRow[];
@@ -70,6 +76,7 @@ export class ContractService extends BaseService<Contract, "id"> {
     private readonly versions: MilestoneVersionRepository,
     private readonly rules: PaymentRuleRepository,
     private readonly libraryService: MilestoneLibraryService,
+    private readonly engine: EngineService,
     private readonly dataSource: DataSource,
   ) {
     super(repository);
@@ -96,13 +103,18 @@ export class ContractService extends BaseService<Contract, "id"> {
   async getContract(id: number, db?: EntityManager): Promise<ContractDetail> {
     const contract = await this.repository.findById(id, db);
     const rows: MilestoneRow[] = [];
-    for (const m of await this.milestones.listByContract(id, db)) {
+    const list = await this.milestones.listByContract(id, db);
+    const latest = await this.engine.latest(list.map((m) => m.id), db);
+    for (const m of list) {
+      const e = latest.get(m.id);
       const v = m.milestoneVersion;
       rows.push({
         id: m.id, version: m.version, position: m.position, milestoneId: v.milestoneId, name: v.milestone.name,
         milestoneVersionId: v.id, versionNo: v.versionNo, isCustom: v.isCustom, versionStatus: v.status,
         amountVndMn: m.amountVndMn, paymentPercent: percentOf(m.amountVndMn, contract.valueVndMn), dueOn: m.dueOn,
         requiredEventTypeIds: v.requiredEventTypeIds, latePenalty: v.latePenalty, ruleCount: (await this.rules.listByVersion(v.id, db)).length,
+        evaluation: e ? { id: e.id, decision: e.decision, reasonCode: e.reasonCode, milestoneStatus: e.milestoneStatus, payableVndMn: e.payableVndMn,
+          penaltyVndMn: e.penaltyVndMn, ruleId: e.ruleId, triggerEventId: e.triggerEventId, evaluatedAt: e.evaluatedAt } : null,
       });
     }
     const totalAmountVndMn = sumAmounts(rows.map((r) => r.amountVndMn));
@@ -185,6 +197,8 @@ export class ContractService extends BaseService<Contract, "id"> {
         await this.versions.update(v.id, v.version, { status: "PUBLISHED", publishedAt: new Date() }, db);
       }
       await this.repository.update(id, expectedVersion, { status: "ACTIVE" }, db);
+      // First decision of every milestone (usually "waiting for evidence").
+      await this.engine.evaluateQuietly(id, {}, db);
       return this.getContract(id, db);
     });
   }

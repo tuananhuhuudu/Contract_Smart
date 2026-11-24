@@ -500,17 +500,18 @@ async function renderContract() {
     <div class="row" style="justify-content:space-between"><h2 style="margin:0">#${c.id} ${esc(c.title)} ${tag(c.status)}</h2>
       ${canActivate ? `<button class="btn" id="activate">Ký / kích hoạt</button>` : ""}</div>
     <p class="hint">${esc(partyName(c.buyerId))} → ${esc(partyName(c.supplierId))} · ${money(c.valueVndMn)} triệu · ${c.startOn} → ${c.endOn} · ${esc(c.approvalPolicy)} · ân hạn ${c.graceDays} ngày, phạt ${Number(c.penaltyPctPerDay)}%/ngày, trần ${Number(c.maxPenaltyPct)}%</p>
-    <p class="hint">${draft ? "DRAFT: sửa được %, hạn, thêm / bỏ mốc, luật riêng cho từng mốc." : c.status === "DRAFT" ? "DRAFT: chỉ chủ hợp đồng / pháp lý của bên mua sửa được; bạn đang xem." : active ? "ACTIVE: đã khóa; bấm \"Sự kiện\" ở một mốc để xem và ghi." : ""}${c.status === "DRAFT" && !canActivate ? " Chỉ chủ hợp đồng của bên mua ký / kích hoạt được." : ""}</p>
-    <div class="scroll"><table id="ms"><tr><th>#</th><th>Mốc</th><th style="width:90px">%</th><th style="width:150px">Hạn</th><th>Tiền (tr)</th><th>Luật</th><th>Sự kiện bắt buộc</th><th></th></tr>
+    <p class="hint">${draft ? "DRAFT: sửa được %, hạn, thêm / bỏ mốc, luật riêng cho từng mốc." : c.status === "DRAFT" ? "DRAFT: chỉ chủ hợp đồng / pháp lý của bên mua sửa được; bạn đang xem." : active ? "ACTIVE: đã khóa. Engine tự chấm mỗi mốc khi kích hoạt và mỗi lần ghi sự kiện; bấm \"Sự kiện & cách chấm\" ở một mốc để ghi sự kiện và xem vì sao ra kết quả đó." : ""}${c.status === "DRAFT" && !canActivate ? " Chỉ chủ hợp đồng của bên mua ký / kích hoạt được." : ""}</p>
+    <div class="scroll"><table id="ms"><tr><th>#</th><th>Mốc</th><th style="width:90px">%</th><th style="width:150px">Hạn</th><th>Tiền (tr)</th><th>Luật</th><th>Sự kiện bắt buộc</th>${active ? "<th>Kết quả engine</th>" : ""}<th></th></tr>
       ${c.milestones.map((m) => `<tr data-id="${m.id}" data-v="${m.version}"><td>${m.position}</td><td>${esc(m.name)}</td>
         <td>${draft ? `<input data-f="paymentPercent" value="${m.paymentPercent}">` : m.paymentPercent}</td>
         <td>${draft ? `<input data-f="dueOn" type="date" value="${m.dueOn}">` : m.dueOn}</td><td>${money(m.amountVndMn)}</td>
         <td>${m.isCustom ? `<b>riêng</b> ${tag(m.versionStatus)}` : `v${m.versionNo} chung`} · ${m.ruleCount} luật</td>
         <td>${esc(m.requiredEventTypeIds.map(evName).join(", "))}</td>
+        ${active ? `<td>${verdict(m.evaluation)}</td>` : ""}
         <td style="white-space:nowrap">${draft ? (m.isCustom
           ? `<button class="btn sec small" data-edit="${m.milestoneVersionId}" data-lib="${m.milestoneId}">Sửa luật riêng</button> <button class="btn sec small" data-shared="${m.id}">Về luật chung</button>`
           : `<button class="btn sec small" data-own="${m.id}">Dùng luật riêng</button>`) + ` <button class="btn sec small" data-drop="${m.id}" data-v="${m.version}">Bỏ</button>`
-          : active ? `<button class="btn ${S.selMs === m.id ? "" : "sec"} small" data-evs="${m.id}">Sự kiện</button>` : ""}</td></tr>`).join("")}</table></div>
+          : active ? `<button class="btn ${S.selMs === m.id ? "" : "sec"} small" data-evs="${m.id}">Sự kiện & cách chấm</button>` : ""}</td></tr>`).join("")}</table></div>
     <p>Tổng tiền: <span class="total ${c.complete ? "ok" : "bad"}">${money(c.totalAmountVndMn)} / ${money(c.valueVndMn)} triệu${c.complete ? " ✓" : " (phải bằng giá trị mới kích hoạt được)"}</span></p>
     ${draft ? `<div class="row"><select id="aLib">${lib.filter((x) => !c.milestones.some((m) => m.milestoneId === x.id)).map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select>
       <label style="flex-direction:row;align-items:center;gap:4px">% <input id="aPct" style="width:80px" value="10"></label>
@@ -556,7 +557,9 @@ async function renderEvents(c, m) {
       <label id="eResWrap">Đóng tranh chấp nào<select id="eRes"><option value="">— chọn —</option>${open.map((e) => `<option value="${e.id}">#${e.id} ${esc(e.note)}</option>`).join("")}</select></label>
       <label>Ghi chú<input id="eNote"></label>
       <button class="btn" id="eAdd">Ghi sự kiện</button>
-    </div><p class="hint">Trạng thái do máy tự điền theo loại sự kiện; bên ghi là bên của chính bạn.</p>`}</div>`;
+    </div><p class="hint">Trạng thái do máy tự điền theo loại sự kiện; bên ghi là bên của chính bạn.</p>`}
+    <div id="howPanel"></div></div>`;
+  await renderHow(m);
   if (!$("#eType")) return;
   const side = S.user.partyId === c.supplierId ? "SUPPLIER" : "BUYER";
   const done = new Set(events.map((e) => e.eventTypeId));
@@ -572,8 +575,79 @@ async function renderEvents(c, m) {
     if ($("#eAt").value) body.happenedAt = $("#eAt").value;
     if ($("#eDoc").value) body.documentNo = $("#eDoc").value;
     if (!$("#eResWrap").hidden && $("#eRes").value) body.resolvesEventId = +$("#eRes").value;
-    const e = await data("POST", "/events", body); toast("ok", `Đã ghi sự kiện #${e.id} (${e.status}).`); await renderContract();
+    const e = await data("POST", "/events", body);
+    const after = (await data("GET", `/milestones/${m.id}/evaluations`)).evaluations[0];
+    toast("ok", `Đã ghi sự kiện #${e.id}. Engine chấm lại: ${after ? DECISION_VI[after.decision] + " · " + reasonVi(after.reasonCode) : "chưa chấm được"}.`); await renderContract();
   });
+}
+
+// ---------------- Engine results ----------------
+const reasonVi = (code) => REASONS.find((x) => x[0] === code)?.[1] ?? code;
+const STATUS_VI = { PLANNED: "Chưa bắt đầu", IN_PROGRESS: "Đang làm", WAITING_EVIDENCE: "Chờ chứng từ", WAITING_APPROVAL: "Chờ duyệt", ON_HOLD: "Đang giữ",
+  REJECTED: "Bị từ chối", ELIGIBLE_FOR_PAYMENT: "Đủ điều kiện trả", PAID_WITH_PENALTY: "Trả có trừ phạt" };
+const OUTCOME_VI = { MATCHED: ["✓ khớp → quyết định", "PUBLISHED"], NOT_MATCHED: ["✗ không khớp, xét luật sau", "CLOSED"], NOT_EVALUATED: ["— không cần xét (đã có luật khớp trước)", ""] };
+/** Short verdict for the milestone table. */
+function verdict(e) {
+  if (!e) return `<span class="hint">chưa chấm</span>`;
+  const amount = e.decision === "RELEASE" || e.decision === "PENALTY" ? ` ${money(e.payableVndMn)} tr` : "";
+  const penalty = Number(e.penaltyVndMn) > 0 ? `, phạt ${money(e.penaltyVndMn)} tr` : "";
+  return `<span class="tag ${RESULT_TONE[e.decision]}">${esc(DECISION_VI[e.decision])}${amount}${penalty}</span><br><small class="hint">${esc(reasonVi(e.reasonCode))}</small>`;
+}
+/** The rule's condition in words, each clause followed by the value the engine computed (display only; the engine decided). */
+function explainCondition(text, values) {
+  const clauses = parseCondition(text);
+  if (clauses === "ELSE") return esc(sentence(clauses));
+  return clauses.map((c) => {
+    const [x, plus] = c.val.split(/\s*\+\s*/);
+    const right = x in values ? ` so với ${showValue(values[x])}${plus && plus in values ? ` + ${showValue(values[plus])} ngày` : ""}` : "";
+    return `${esc(sentence([c]).replace(/^Nếu /, ""))} <b>(thực tế: ${showValue(values[c.v])}${right})</b>`;
+  }).join(" và ");
+}
+/** A variable value in words. */
+function showValue(v) {
+  if (v === true) return "Có"; if (v === false) return "Không"; if (v === null || v === undefined || v === "") return "—";
+  return /^-?\d+(\.\d+)?$/.test(String(v)) ? money(v) : esc(v);
+}
+/** "How was it judged": the numbers, every rule tried in order, the missing / invalid evidence and the history. */
+async function renderHow(m) {
+  const { rules, evaluations } = await data("GET", `/milestones/${m.id}/evaluations`);
+  const e = evaluations[0], ruleOf = (id) => rules.find((x) => String(x.id) === String(id));
+  const box = $("#howPanel");
+  if (!e) { box.innerHTML = `<h3>Cách engine chấm</h3><p class="hint">Mốc này chưa được chấm.</p><button class="btn sec small" id="reEval">Chấm lại</button>`; }
+  else {
+    const f = e.facts, won = ruleOf(e.ruleId);
+    const used = new Set(rules.flatMap((x) => VARS.filter((v) => x.condition.includes(v[0])).map((v) => v[0])));
+    const vars = VARS.filter((v) => v[0] in f.variables).sort((a, b) => used.has(b[0]) - used.has(a[0]));
+    box.innerHTML = `<h3>Cách engine chấm <small class="hint">lần mới nhất ${new Date(e.evaluatedAt).toLocaleString("vi-VN")}${e.triggerEventId ? ` · do sự kiện #${e.triggerEventId}` : " · lúc kích hoạt / bấm chấm lại"}</small></h3>
+      <div class="card" style="background:#f7faf8">
+        <b>Kết luận:</b> ${verdict(e)} → trạng thái mốc <b>${esc(STATUS_VI[e.milestoneStatus] ?? e.milestoneStatus)}</b>.
+        Trả <b>${money(e.payableVndMn)}</b> triệu, phạt <b>${money(e.penaltyVndMn)}</b> triệu (tiền mốc ${money(m.amountVndMn)} triệu).
+        ${won ? `<br>Vì luật <b>#${won.priority} "${esc(won.name)}"</b> là luật đầu tiên khớp.` : "<br>Không luật nào khớp."}
+      </div>
+      <p><b>Bước 1 – Engine đọc sự kiện và tính ra các con số:</b></p>
+      <ul class="hint" style="margin-top:0">
+        <li>Thiếu sự kiện bắt buộc: ${f.missing.length ? `<b style="color:var(--err)">${esc(f.missing.join(", "))}</b>` : "không thiếu"}</li>
+        <li>Sự kiện sai thẩm quyền (bên không được ghi loại đó): ${f.unauthorized.length ? `<b style="color:var(--err)">#${f.unauthorized.join(", #")}</b>` : "không có"}</li>
+        <li>Tranh chấp đang mở: ${f.openDisputeIds.length ? `<b style="color:var(--err)">#${f.openDisputeIds.join(", #")}</b>` : "không có"}</li>
+        <li>Phê duyệt hợp lệ: ${f.validApprovalCount} / ${f.quorum} vai trò cần duyệt</li>
+        <li>Hoàn thành lúc: ${f.completedAt ? esc(f.completedAt.replace("T", " ")) : "chưa hoàn thành"} · hạn ${m.dueOn}${f.daysLate ? ` · <b>trễ ${f.daysLate} ngày</b> sau ân hạn` : ""}</li>
+        ${f.duplicates.length ? `<li>Sự kiện trùng (bỏ qua): #${f.duplicates.join(", #")}</li>` : ""}
+        ${[...f.warnings, ...f.issues].map((w) => `<li>Cảnh báo: ${esc(w)}</li>`).join("")}
+      </ul>
+      <details><summary class="hint">Xem đủ ${vars.length} con số engine đưa vào luật (in đậm = có luật dùng tới)</summary>
+        <div class="scroll"><table><tr><th>Con số</th><th>Giá trị</th></tr>${vars.map((v) => `<tr><td>${used.has(v[0]) ? `<b>${esc(v[1])}</b>` : esc(v[1])}</td><td>${showValue(f.variables[v[0]])}</td></tr>`).join("")}</table></div></details>
+      <p><b>Bước 2 – Thử từng luật theo thứ tự, luật đầu tiên khớp quyết định:</b></p>
+      <div class="scroll"><table><tr><th>#</th><th>Luật</th><th>Thì</th><th>Kết quả thử</th></tr>
+        ${f.trail.map(([id, outcome]) => { const x = ruleOf(id), o = OUTCOME_VI[outcome] ?? [outcome, ""];
+          return `<tr ${String(id) === String(e.ruleId) ? 'style="background:#e3f3ec"' : ""}><td>${x?.priority ?? ""}</td><td>${esc(x?.name ?? "luật #" + id)}<br><small class="hint">${x ? explainCondition(x.condition, f.variables) : ""}</small></td>
+            <td>${x ? esc(DECISION_VI[x.decision]) : ""}</td><td>${o[1] ? `<span class="tag ${o[1]}">${esc(o[0])}</span>` : `<span class="hint">${esc(o[0])}</span>`}</td></tr>`; }).join("")}</table></div>
+      <details style="margin-top:8px"><summary class="hint">Lịch sử chấm (${evaluations.length} lần)</summary>
+        <div class="scroll"><table><tr><th>Lúc</th><th>Do</th><th>Kết quả</th><th>Luật</th></tr>
+          ${evaluations.map((x) => `<tr><td>${new Date(x.evaluatedAt).toLocaleString("vi-VN")}</td><td>${x.triggerEventId ? "sự kiện #" + x.triggerEventId : "kích hoạt / chấm lại"}</td>
+            <td>${verdict(x)}</td><td>${esc(ruleOf(x.ruleId)?.name ?? "")}</td></tr>`).join("")}</table></div></details>
+      <p><button class="btn sec small" id="reEval">Chấm lại ngay</button> <span class="hint">Thường không cần: engine tự chấm sau mỗi sự kiện.</span></p>`;
+  }
+  $("#reEval").onclick = run(async () => { await data("POST", `/milestones/${m.id}/evaluate`); toast("ok", "Đã chấm lại."); await renderContract(); });
 }
 
 // ---------------- Start ----------------

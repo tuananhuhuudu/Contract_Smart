@@ -16,7 +16,8 @@ Luồng: **tạo mốc (điều kiện + luật) → ghép mốc vào loại h�
 | 2. Thư viện mốc | `milestone_library`, `milestone_versions`, `payment_rules` | ✅ Đã dựng (chưa nạp dữ liệu) |
 | 3. Loại hợp đồng | `contract_types`, `contract_type_milestones` | ✅ Đã dựng (chưa nạp dữ liệu) |
 | 4. Hợp đồng | `contracts`, `milestones`, `events` | ✅ Đã dựng (chưa nạp dữ liệu) |
-| 5. Chấm, chi tiền, nhật ký | `milestone_evaluations`, `payments`, `audit_log` | ⏳ (thiết kế cột đang chờ duyệt) |
+| 5. Chấm, chi tiền, nhật ký | `milestone_evaluations` | ✅ Đã dựng, engine đã nối |
+|  | `payments`, `audit_log` | ⏳ Chưa dựng |
 
 ## 2. Quy ước chung
 
@@ -265,9 +266,41 @@ contracts ──< milestones ──> milestone_versions (luật chung, hoặc lu
 | `POST /contracts/:id/activate` | Có mốc, tổng tiền = giá trị, các bên hợp lệ, luật riêng đủ (có sự kiện bắt buộc, có luật, luật cuối ELSE); khóa luật riêng cùng lúc với hợp đồng. |
 | `POST /events` | Hợp đồng ACTIVE; loại sự kiện đang bật; bên thuộc hợp đồng; Đóng tranh chấp phải trỏ tới Mở tranh chấp **cùng mốc**, không sớm hơn lúc mở, chưa bị đóng; trường này chỉ dùng cho Đóng tranh chấp. Bên ghi sai loại chứng từ **không bị chặn** (engine đánh dấu sai thẩm quyền). |
 
+## 6b. Nhóm 5: engine chấm
+
+### 6b.1 `milestone_evaluations`: Kết quả chấm
+
+Mỗi lần engine chấm một mốc thêm **một dòng**; dòng mới nhất là kết quả hiện tại, các dòng cũ là lịch sử. Chỉ thêm (trigger `milestone_evaluations_append_only`, `milestone_evaluations_no_truncate`).
+
+| Cột | Kiểu | Bắt buộc | Khóa | Ý nghĩa |
+| --- | --- | --- | --- | --- |
+| `id` | integer | ✓ | PK | Mã lần chấm. |
+| `milestone_id` | integer | ✓ | FK → `milestones.id` | Mốc được chấm. |
+| `trigger_event_id` | integer |  | FK → `events.id` | Sự kiện làm engine chấm lại; NULL khi chấm lúc kích hoạt / bấm Chấm lại. |
+| `rule_id` | integer |  | FK → `payment_rules.id` | Luật quyết định (luật đầu tiên khớp). |
+| `decision` | text | ✓ |  | RELEASE / HOLD / REJECT / PENALTY. |
+| `reason_code` | text | ✓ |  | Mã lý do của luật quyết định. |
+| `milestone_status` | text | ✓ |  | Trạng thái mốc sau khi chấm (WAITING_EVIDENCE, ON_HOLD, ELIGIBLE_FOR_PAYMENT...). |
+| `payable_vnd_mn`, `penalty_vnd_mn` | numeric(18,2) | ✓ |  | Tiền trả, tiền phạt (triệu VND). |
+| `facts` | jsonb | ✓ |  | Vì sao: các con số engine tính, kết quả thử từng luật, sự kiện thiếu / sai thẩm quyền / trùng, tranh chấp mở, cảnh báo. |
+| `evaluated_at` | timestamptz | ✓ |  | Lúc chấm. |
+
+### 6b.2 Engine chạy khi nào
+
+| Lúc | Chấm gì |
+| --- | --- |
+| `POST /contracts/:id/activate` | Mọi mốc của hợp đồng. |
+| `POST /events` | Mốc của sự kiện vừa ghi (`trigger_event_id` = sự kiện đó). Engine lỗi thì sự kiện vẫn lưu, lỗi được ghi log. |
+| `POST /milestones/:id/evaluate`, `POST /contracts/:id/evaluate` | Chấm lại bằng tay (hợp đồng phải ACTIVE). |
+| `pnpm db:seed` | Chấm hợp đồng mẫu 1 sau khi nạp. |
+
+Cách chạy: API (`src/services/engine.service.ts`) đọc các bảng, đổi sang dạng hàng của Data Pack BTC, gọi `python3 apps/engine/run_json.py` (JSON vào stdin, JSON ra stdout) rồi lưu kết quả. Logic chấm là gói `codecash_engine` chép nguyên từ dự án cũ; trên CT0019 cho kết quả giống hệt engine cũ (3 mốc RELEASE, Nghiệm thu HOLD vì tranh chấp). Biến môi trường tùy chọn: `PYTHON` (mặc định `python3`), `ENGINE_DIR` (mặc định `../engine`).
+
+`GET /milestones/:id/evaluations` trả `{ rules, evaluations }`: lịch sử chấm (mới nhất trước) và bộ luật mốc đang dùng để đọc kết quả theo tên luật. Ai xem được hợp đồng thì xem được.
+
 ## 7. Dữ liệu mẫu
 
-`pnpm db:seed` (trong `apps/api`) đọc `data/datapack/*.csv` của BTC và nạp lại từ đầu (xóa rồi nạp). Mã trong CSV (`B009`, `S021`...) chỉ dùng để nối dòng lúc nạp; DB giữ `id` tự sinh. Hiện nạp: **65 bên** (10 bên mua, 25 nhà cung cấp, 30 người phê duyệt), **9 tài khoản demo**, và **một quy trình mẫu nhỏ**: 4 mốc của loại hàng hóa (32 luật, đã công bố), loại hợp đồng "Cung cấp hàng hóa", hợp đồng CT0019 (Nova An mua của Phú Minh, ACTIVE, 14 sự kiện thật) và một hợp đồng DRAFT để thử. Quyền `DISPUTE` trong CSV được đổi thành cả Mở tranh chấp và Đóng tranh chấp.
+`pnpm db:seed` (trong `apps/api`) đọc `data/datapack/*.csv` của BTC và nạp lại từ đầu (xóa rồi nạp). Mã trong CSV (`B009`, `S021`...) chỉ dùng để nối dòng lúc nạp; DB giữ `id` tự sinh. Hiện nạp: **65 bên** (10 bên mua, 25 nhà cung cấp, 30 người phê duyệt), **9 tài khoản demo**, và **một quy trình mẫu nhỏ**: 4 mốc của loại hàng hóa (32 luật, đã công bố), loại hợp đồng "Cung cấp hàng hóa", hợp đồng CT0019 (Nova An mua của Phú Minh, ACTIVE, 14 sự kiện thật) và một hợp đồng DRAFT để thử. Sau khi nạp, engine chấm hợp đồng 1. Quyền `DISPUTE` trong CSV được đổi thành cả Mở tranh chấp và Đóng tranh chấp.
 
 ## 8. Migration
 
@@ -277,6 +310,7 @@ contracts ──< milestones ──> milestone_versions (luật chung, hoặc lu
 | `MilestoneLibrary` | `milestone_library`, `milestone_versions`, `payment_rules`, trigger khóa phiên bản đã công bố |
 | `ContractTypes` | `contract_types`, `contract_type_milestones` |
 | `Contracts` | `contracts`, `milestones`, `events`, trigger khóa hợp đồng / mốc và sự kiện chỉ thêm |
+| `MilestoneEvaluations` | `milestone_evaluations`, trigger chỉ thêm |
 
 ## 9. Lệnh thường dùng
 

@@ -6,6 +6,7 @@ import { EventType } from "../models/event-type.entity";
 import { Milestone } from "../models/milestone.entity";
 import { Party } from "../models/party.entity";
 import { EventRepository } from "../repositories/event.repository";
+import { EngineService } from "./engine.service";
 import type { CreateEventDto } from "../schemas/contract.schema";
 import { nowInVietnam } from "../utils/dates";
 import { assertCanSee } from "../core/security/access";
@@ -19,6 +20,7 @@ import type { AuthUser } from "../core/security/decorators";
 export class EventService {
   constructor(
     private readonly events: EventRepository,
+    private readonly engine: EngineService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -66,10 +68,13 @@ export class EventService {
         throw new BadRequestException("resolvesEventId is only for closing a dispute");
       }
 
-      return this.events.create({
+      const event = await this.events.create({
         milestoneId: milestone.id, eventTypeId: type.id, status: type.validStatus, partyId: party.id, recordedBy: user.id,
         happenedAt, documentNo: dto.documentNo || null, resolvesEventId, note: dto.note?.trim() ?? "",
       }, db);
+      // The engine judges the milestone again with this event included.
+      await this.engine.evaluateQuietly(contract.id, { milestoneIds: [milestone.id], triggerEventId: event.id }, db);
+      return event;
     });
   }
 
