@@ -18,7 +18,7 @@ Luồng: **tạo mốc (điều kiện + luật) → ghép mốc vào loại h�
 | 4. Hợp đồng | `contracts`, `milestones`, `events` | ✅ Đã dựng (chưa nạp dữ liệu) |
 | 5. Chấm, chi tiền, nhật ký | `milestone_evaluations` | ✅ Đã dựng, engine đã nối |
 |  | `payments` | ✅ Đã dựng: lệnh chi, duyệt tài chính |
-|  | `audit_log` | ⏳ Chưa dựng |
+|  | `audit_log` | ✅ Đã dựng: nhật ký kiểm toán chuỗi băm |
 
 ## 2. Quy ước chung
 
@@ -335,9 +335,62 @@ Hệ thống tự lập khi engine cho trả (RELEASE / PENALTY); chỉ **duyệ
 | Sau khi chi | Mốc đã chi không nhận thêm sự kiện (`MILESTONE_PAID`), engine không chấm lại mốc đó. |
 | `GET /payments` | Lệnh chi của hợp đồng thuộc tổ chức mình (nhà cung cấp cũng xem được); quản trị, kiểm toán thấy hết. |
 
+### 6b.4 `audit_log`: Nhật ký kiểm toán
+
+Ai làm gì, lúc nào, trên cái gì. Mỗi thao tác ghi đúng một (hoặc vài) dòng **trong cùng giao dịch** với thao tác: thao tác thành công thì có dòng, lỗi thì cả hai cùng hủy. Ghi qua `AuditService.record` (`src/services/audit.service.ts`).
+
+| Cột | Kiểu | Bắt buộc | Khóa | Ý nghĩa |
+| --- | --- | --- | --- | --- |
+| `id` | bigint | ✓ | PK | Số thứ tự trong chuỗi, **trigger cấp**, liên tục từ 1. |
+| `occurred_at` | timestamptz | ✓ |  | Lúc ghi, trigger đặt bằng giờ CSDL (không tin giờ app gửi). |
+| `actor_id` | uuid |  | FK → `users.id` | Người làm; trống = hệ thống (engine chấm, lập / hủy lệnh chi, đóng hợp đồng). |
+| `actor_email`, `actor_role` | text |  |  | Email, vai **lúc làm** (chụp lại; vai có thể đổi sau). |
+| `actor_organization_id` | integer |  | FK → `parties.id` | Công ty của người làm lúc đó. |
+| `action` | text | ✓ |  | Hành động, xem bảng dưới. |
+| `resource`, `resource_id` | text | ✓ |  | Loại và mã đối tượng: `contract 1`, `event 15`, `payment 3`, `user <uuid>`... |
+| `contract_id` | integer |  | FK → `contracts.id` | Hợp đồng liên quan, để lọc theo hợp đồng và theo bên. |
+| `organization_id` | integer |  | FK → `parties.id` | Công ty mà dòng nói tới (tài khoản, khóa công ty), để quản trị công ty xem. |
+| `before`, `after` | jsonb |  |  | Giá trị trước / sau (chỉ các trường đổi). **Không bao giờ** chứa mật khẩu. |
+| `reason` | text | ✓ |  | Lý do, ví dụ mã lỗi đăng nhập, lý do hủy lệnh chi. |
+| `prev_hash` | char(64) | ✓ |  | Mã băm dòng trước (dòng đầu: 64 số `0`). |
+| `hash` | char(64) | ✓ | UNIQUE | SHA-256 của chính dòng này, kể cả `prev_hash`. |
+
+**Hành động được ghi:**
+
+| Nhóm | `action` |
+| --- | --- |
+| Tài khoản | `LOGIN_FAILED`, `ORG_CREATED`, `ORG_LOCKED`, `ORG_UNLOCKED`, `USER_CREATED`, `USER_UPDATED`, `USER_LOCKED`, `USER_UNLOCKED`, `PASSWORD_RESET`, `PASSWORD_CHANGED` |
+| Hợp đồng | `CONTRACT_CREATED`, `CONTRACT_UPDATED`, `CONTRACT_ACTIVATED`, `CONTRACT_CLOSED` |
+| Mốc của bản nháp | `MILESTONE_ADDED`, `MILESTONE_UPDATED`, `MILESTONE_REMOVED`, `MILESTONE_CUSTOM_RULES`, `MILESTONE_SHARED_RULES` |
+| Sự kiện | `EVENT_RECORDED`, `DISPUTE_OPENED`, `DISPUTE_CLOSED` |
+| Engine | `MILESTONE_EVALUATED` |
+| Chi tiền | `PAYMENT_OPENED`, `PAYMENT_CANCELLED`, `PAYMENT_APPROVED` |
+
+**Trigger và hàm (viết tay trong migration `AuditLog`):**
+
+| Tên | Việc |
+| --- | --- |
+| `audit_log_seal` → `seal_audit_entry()` | Trước khi thêm: khóa `pg_advisory_xact_lock` (mỗi lúc một người ghi, nhả khi commit), lấy dòng cuối, cấp `id` = cuối + 1, `prev_hash` = hash dòng cuối, `occurred_at` = giờ CSDL, rồi tính `hash`. App không tự đặt được các cột này. |
+| `audit_entry_hash(e)` | `SHA-256` của mảng JSON mọi cột trừ `hash`, theo thứ tự cố định (jsonb tự sắp khóa nên `before`/`after` băm ổn định). |
+| `audit_log_guard`, `audit_log_no_truncate` | Chặn `UPDATE`, `DELETE` (`AUDIT_LOCKED`) và `TRUNCATE`. |
+| `audit_verify()` | Đi từ dòng 1: số thứ tự phải liên tục (phát hiện **xóa**), `prev_hash` phải khớp dòng trước (phát hiện **chèn / đổi thứ tự**), `hash` phải tính lại đúng (phát hiện **sửa**). Trả dòng hỏng đầu tiên, hoặc mã băm cuối nếu nguyên vẹn. |
+
+Ví dụ đã thử: tắt trigger rồi sửa `after` của dòng 12 → `audit_verify()` báo "entry 12 was changed after it was written"; xóa dòng 5 → "entry 5 is missing". Giới hạn: người có quyền chủ CSDL có thể **viết lại cả chuỗi** từ một dòng trở đi; muốn chặn cả việc đó thì chép `head_hash` ra nơi khác định kỳ (neo) và so lại.
+
+**Ai đọc được (`GET /audit-log`, lọc `contractId`, `action`, `resource`, `actorId`):**
+
+| Vai | Thấy |
+| --- | --- |
+| `AUDITOR` | Tất cả; thêm `GET /audit-log/verify` kiểm chuỗi |
+| `SYSTEM_ADMIN` | Dòng không thuộc hợp đồng nào (công ty, tài khoản, đăng nhập sai) |
+| `ADMIN_AUDITOR` | Hợp đồng công ty mình là một bên, mọi việc nhân viên công ty mình làm, dòng về công ty mình |
+| `ORG_ADMIN` | Dòng về công ty mình (`organization_id`): tài khoản, đăng nhập sai |
+| Vai khác | Lịch sử các hợp đồng công ty mình là một bên |
+| Không ai | Sửa, xóa |
+
 ## 7. Dữ liệu mẫu
 
-`pnpm db:seed` (trong `apps/api`) đọc `data/datapack/*.csv` của BTC và nạp lại từ đầu (xóa rồi nạp). Mã trong CSV (`B009`, `S021`...) chỉ dùng để nối dòng lúc nạp; DB giữ `id` tự sinh. Hiện nạp: **65 bên** (10 bên mua, 25 nhà cung cấp, 30 người phê duyệt), **9 tài khoản demo**, và **một quy trình mẫu nhỏ**: 4 mốc của loại hàng hóa (32 luật, đã công bố), loại hợp đồng "Cung cấp hàng hóa", hợp đồng CT0019 (Nova An mua của Phú Minh, ACTIVE, 14 sự kiện thật) và một hợp đồng DRAFT để thử. Sau khi nạp, engine chấm hợp đồng 1 và tự lập 3 lệnh chi chờ duyệt. Quyền `DISPUTE` trong CSV được đổi thành cả Mở tranh chấp và Đóng tranh chấp.
+`pnpm db:seed` (trong `apps/api`) đọc `data/datapack/*.csv` của BTC và nạp lại từ đầu (xóa rồi nạp). Mã trong CSV (`B009`, `S021`...) chỉ dùng để nối dòng lúc nạp; DB giữ `id` tự sinh. Hiện nạp: **65 bên** (10 bên mua, 25 nhà cung cấp, 30 người phê duyệt), **9 tài khoản demo**, và **một quy trình mẫu nhỏ**: 4 mốc của loại hàng hóa (32 luật, đã công bố), loại hợp đồng "Cung cấp hàng hóa", hợp đồng CT0019 (Nova An mua của Phú Minh, ACTIVE, 14 sự kiện thật) và một hợp đồng DRAFT để thử. Sau khi nạp, engine chấm hợp đồng 1 và tự lập 3 lệnh chi chờ duyệt. Nhật ký kiểm toán được làm lại từ đầu (seed là thao tác dọn môi trường thử, tắt trigger trong giao dịch), bắt đầu bằng 2 dòng "Nạp dữ liệu mẫu" cho 2 hợp đồng rồi các dòng engine chấm và lập lệnh chi. Quyền `DISPUTE` trong CSV được đổi thành cả Mở tranh chấp và Đóng tranh chấp.
 
 ## 8. Migration
 
@@ -350,6 +403,7 @@ Hệ thống tự lập khi engine cho trả (RELEASE / PENALTY); chỉ **duyệ
 | `MilestoneEvaluations` | `milestone_evaluations`, trigger chỉ thêm |
 | `Payments` | `payments`, trigger khóa lệnh chi |
 | `OrgAdmins` | vai `ORG_ADMIN`, cột `users.created_by` |
+| `AuditLog` | `audit_log`, trigger đánh số + chuỗi băm + chặn sửa xóa, hàm `audit_verify()` |
 
 ## 9. Lệnh thường dùng
 

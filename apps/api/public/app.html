@@ -69,6 +69,7 @@
     <button data-tab="types">2. Loại hợp đồng</button>
     <button data-tab="contracts">3. Hợp đồng &amp; sự kiện</button>
     <button data-tab="accounts" hidden>4. Tài khoản</button>
+    <button data-tab="audit">5. Nhật ký</button>
   </nav>
   <span class="who" id="who"></span>
 </header>
@@ -119,6 +120,11 @@
   <section data-page="accounts" hidden>
     <div class="card" id="accTop"></div>
     <div class="card" style="margin-top:12px" id="accUsers"></div>
+  </section>
+
+  <section data-page="audit" hidden>
+    <div class="card" id="auditTop"></div>
+    <div class="card" style="margin-top:12px" id="auditRows"></div>
   </section>
 
   <!-- 3. Contracts -->
@@ -199,7 +205,7 @@ function showTab(name) {
   S.tab = name;
   document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("on", x.dataset.tab === name));
   document.querySelectorAll("[data-page]").forEach((s) => s.hidden = s.dataset.page !== name);
-  ({ lib: loadLib, types: loadTypes, contracts: loadContracts, accounts: loadAccounts })[name]();
+  ({ lib: loadLib, types: loadTypes, contracts: loadContracts, accounts: loadAccounts, audit: loadAudit })[name]();
 }
 document.querySelectorAll("#tabs button").forEach((b) => b.onclick = run(() => showTab(b.dataset.tab)));
 
@@ -809,6 +815,61 @@ async function renderUsers() {
     const password = prompt("Mật khẩu mới cho tài khoản này (ít nhất 8 ký tự)"); if (!password) return;
     const u = await data("POST", `/users/${row(b).dataset.id}/reset-password`, { password }); toast("ok", `Đã đặt lại mật khẩu cho ${u.email}.`); await renderUsers();
   }));
+}
+
+// ================= 5. Audit log =================
+const AUDIT_VI = {
+  LOGIN_FAILED: "Đăng nhập thất bại", ORG_CREATED: "Mở công ty", ORG_LOCKED: "Khóa công ty", ORG_UNLOCKED: "Mở khóa công ty",
+  USER_CREATED: "Tạo tài khoản", USER_UPDATED: "Sửa tài khoản", USER_LOCKED: "Khóa tài khoản", USER_UNLOCKED: "Mở khóa tài khoản",
+  PASSWORD_RESET: "Đặt lại mật khẩu", PASSWORD_CHANGED: "Tự đổi mật khẩu",
+  CONTRACT_CREATED: "Tạo hợp đồng", CONTRACT_UPDATED: "Sửa hợp đồng", CONTRACT_ACTIVATED: "Kích hoạt hợp đồng", CONTRACT_CLOSED: "Đóng hợp đồng",
+  MILESTONE_ADDED: "Thêm mốc", MILESTONE_UPDATED: "Sửa mốc", MILESTONE_REMOVED: "Bỏ mốc", MILESTONE_CUSTOM_RULES: "Dùng luật riêng", MILESTONE_SHARED_RULES: "Về luật chung",
+  EVENT_RECORDED: "Ghi sự kiện", DISPUTE_OPENED: "Mở tranh chấp", DISPUTE_CLOSED: "Đóng tranh chấp",
+  MILESTONE_EVALUATED: "Engine chấm mốc", PAYMENT_OPENED: "Lập lệnh chi", PAYMENT_CANCELLED: "Hủy lệnh chi", PAYMENT_APPROVED: "Duyệt chi",
+};
+const AUDIT_SCOPE = {
+  AUDITOR: "Bạn là <b>kiểm toán</b> (độc lập, thuộc nền tảng): thấy <b>toàn bộ</b> nhật ký và kiểm tra được chuỗi băm.",
+  SYSTEM_ADMIN: "Bạn là <b>quản trị hệ thống</b>: thấy việc mở/khóa công ty và tài khoản, <b>không</b> thấy nội dung hợp đồng.",
+  ADMIN_AUDITOR: "Bạn là <b>kiểm soát</b> của công ty: thấy mọi việc trên hợp đồng của công ty mình và mọi việc nhân viên công ty mình làm.",
+  ORG_ADMIN: "Bạn là <b>quản trị công ty</b>: thấy việc liên quan tới tài khoản của công ty mình (tạo, khóa, đặt lại mật khẩu, đăng nhập sai).",
+};
+const short = (h) => h ? h.slice(0, 8) : "";
+/** before → after of an entry, as "field: old → new". */
+function auditChange(a) {
+  const keys = [...new Set([...Object.keys(a.before ?? {}), ...Object.keys(a.after ?? {})])];
+  const val = (v) => v === undefined ? "" : esc(typeof v === "object" ? JSON.stringify(v) : String(v));
+  return keys.map((k) => a.before && k in a.before ? `${esc(k)}: ${val(a.before[k])} → ${val(a.after?.[k])}` : `${esc(k)}: ${val(a.after[k])}`).join("<br>");
+}
+async function loadAudit() {
+  const auditor = S.user.role === "AUDITOR";
+  S.auditFilter ??= { contractId: "", action: "" };
+  $("#auditTop").innerHTML = `<h2 style="margin-top:0">Nhật ký kiểm toán</h2>
+    <p class="hint">Ai làm gì, lúc nào. <b>Không ai sửa hay xóa được</b>, kể cả quản trị hệ thống (CSDL chặn). Mỗi dòng giữ mã băm của dòng trước: sửa lén một dòng là chuỗi đứt ở đó.<br>
+      ${AUDIT_SCOPE[S.user.role] ?? "Bạn thấy lịch sử các <b>hợp đồng của công ty mình</b>."}</p>
+    <div class="grid">
+      <label>Hợp đồng (mã)<input id="auC" value="${esc(S.auditFilter.contractId)}" placeholder="tất cả"></label>
+      <label>Hành động<select id="auA"><option value="">Tất cả</option>${Object.entries(AUDIT_VI).map(([k, v]) => `<option value="${k}" ${k === S.auditFilter.action ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
+      <button class="btn sec" id="auGo">Lọc</button>
+      ${auditor ? `<button class="btn" id="auVerify">Kiểm tra chuỗi băm</button>` : ""}
+    </div><div id="auVerifyOut"></div>`;
+  $("#auGo").onclick = run(async () => { S.auditFilter = { contractId: $("#auC").value.trim(), action: $("#auA").value }; await loadAudit(); });
+  if (auditor) $("#auVerify").onclick = run(async () => {
+    const r = await data("GET", "/audit-log/verify");
+    $("#auVerifyOut").innerHTML = r.ok
+      ? `<div class="msg ok" style="margin-top:8px">Chuỗi nguyên vẹn: đã kiểm ${r.checked} dòng, không dòng nào bị sửa hay xóa. Mã băm cuối: <code>${esc(r.headHash)}</code></div>`
+      : `<div class="msg bad" style="margin-top:8px">Chuỗi bị đứt ở dòng #${r.brokenId}: ${esc(r.problem)}. ${r.checked} dòng trước đó vẫn đúng.</div>`;
+  });
+  const q = new URLSearchParams({ pageSize: "100" });
+  if (S.auditFilter.contractId) q.set("contractId", S.auditFilter.contractId);
+  if (S.auditFilter.action) q.set("action", S.auditFilter.action);
+  const rows = await data("GET", `/audit-log?${q}`);
+  $("#auditRows").innerHTML = `<div class="scroll"><table><tr><th>#</th><th>Lúc</th><th>Ai</th><th>Làm gì</th><th>Trên</th><th>Nội dung</th><th>Mã băm (trước → dòng này)</th></tr>
+    ${rows.map((a) => `<tr><td>${a.id}</td><td style="white-space:nowrap">${esc(new Date(a.occurredAt).toLocaleString("vi-VN"))}</td>
+      <td>${a.actorEmail ? `${esc(a.actorEmail)}<br><small>${esc(ROLE_NAME[a.actorRole] ?? a.actorRole)}${a.actorOrganizationId ? " · " + esc(partyName(a.actorOrganizationId)) : ""}</small>` : `<i>Hệ thống</i>`}</td>
+      <td><b>${esc(AUDIT_VI[a.action] ?? a.action)}</b>${a.reason ? `<br><small>${esc(a.reason)}</small>` : ""}</td>
+      <td style="white-space:nowrap">${esc(a.resource)} ${esc(a.resourceId.length > 12 ? a.resourceId.slice(0, 8) + "…" : a.resourceId)}${a.contractId ? `<br><small>HĐ #${a.contractId}</small>` : ""}${a.organizationId ? `<br><small>${esc(partyName(a.organizationId))}</small>` : ""}</td>
+      <td style="font-size:12px">${auditChange(a)}</td>
+      <td style="white-space:nowrap"><code>${short(a.prevHash)}</code> → <code>${short(a.hash)}</code></td></tr>`).join("") || `<tr><td colspan="7" class="hint">Không có dòng nào bạn được xem.</td></tr>`}</table></div>`;
 }
 
 // ---------------- Start ----------------

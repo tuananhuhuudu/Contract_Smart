@@ -8,6 +8,7 @@ import { APPROVAL_ROLES, Party } from "../models/party.entity";
 import { PLATFORM_ROLES, ROLES_BY_COMPANY, User, type UserRole } from "../models/user.entity";
 import type { ChangePasswordDto, CreateOrganizationDto, CreateUserDto, UpdateOrganizationDto, UpdateUserDto, UserListQuery } from "../schemas/account.schema";
 import { Paginated, pageMeta, toSkipTake } from "../utils/paging";
+import { AuditService } from "./audit.service";
 
 type ApprovalRole = (typeof APPROVAL_ROLES)[number];
 const APPROVER_NAMES: Record<ApprovalRole, string> = {
@@ -29,7 +30,10 @@ export interface UserView {
  */
 @Injectable()
 export class AccountService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly audit: AuditService,
+  ) {}
 
   // ---------------- Companies (platform administrator) ----------------
 
@@ -42,19 +46,30 @@ export class AccountService {
         name: dto.name.trim(), type: dto.type, parentId: null, approvalRole: null, approvalLimitVndMn: null,
         allowedEventTypeIds: await this.defaultEventTypes(dto.type, null, db),
       }));
+      await this.audit.record(db, actor, {
+        action: "ORG_CREATED", resource: "organization", resourceId: organization.id, organizationId: organization.id,
+        after: { name: organization.name, type: organization.type },
+      });
       const admin = await this.insertUser({ email: dto.adminEmail, fullName: dto.adminName, password: dto.adminPassword, role: "ORG_ADMIN", partyId: organization.id }, actor, db);
       return { organization, admin: await this.view(admin.id, db) };
     });
   }
 
   /** Locks or unlocks a whole company: its staff cannot log in while it is locked (AuthGuard checks it). */
-  async updateOrganization(id: number, dto: UpdateOrganizationDto): Promise<Party> {
-    const repo = this.dataSource.getRepository(Party);
-    const party = await repo.findOne({ where: { id } });
-    if (!party || party.type === "APPROVER") throw new NotFoundException(`Company ${id} not found`);
-    if (party.version !== dto.version) throw new ConflictException(`VERSION_CONFLICT: company ${id} changed; reload it`);
-    await repo.update({ id, version: dto.version }, { active: dto.active });
-    return repo.findOneOrFail({ where: { id } });
+  updateOrganization(id: number, dto: UpdateOrganizationDto, actor: AuthUser): Promise<Party> {
+    return this.dataSource.transaction(async (db) => {
+      const repo = db.getRepository(Party);
+      const party = await repo.findOne({ where: { id } });
+      if (!party || party.type === "APPROVER") throw new NotFoundException(`Company ${id} not found`);
+      if (party.version !== dto.version) throw new ConflictException(`VERSION_CONFLICT: company ${id} changed; reload it`);
+      await repo.update({ id, version: dto.version }, { active: dto.active });
+      if (party.active !== dto.active)
+        await this.audit.record(db, actor, {
+          action: dto.active ? "ORG_UNLOCKED" : "ORG_LOCKED", resource: "organization", resourceId: id, organizationId: id,
+          before: { active: party.active }, after: { active: dto.active },
+        });
+      return repo.findOneOrFail({ where: { id } });
+    });
   }
 
   // ---------------- Users ----------------
@@ -118,22 +133,40 @@ export class AccountService {
         changes.role = dto.role;
       }
       await db.getRepository(User).update({ id, version: dto.version }, changes);
+      const old = user as unknown as Record<string, unknown>;
+      const changed = (Object.keys(changes) as (keyof User)[]).filter((k) => old[k] !== changes[k]);
+      if (changed.length) {
+        const onlyLock = changed.length === 1 && changed[0] === "active";
+        await this.audit.record(db, actor, {
+          action: onlyLock ? (changes.active ? "USER_UNLOCKED" : "USER_LOCKED") : "USER_UPDATED", resource: "user", resourceId: id,
+          organizationId: await this.organizationOfParty(user.partyId, db),
+          before: Object.fromEntries(changed.map((k) => [k, old[k]])), after: Object.fromEntries(changed.map((k) => [k, changes[k]])),
+        });
+      }
       return this.view(id, db);
     });
   }
 
   /** Sets a new password chosen by the administrator (for a forgotten password); the user changes it after logging in. */
-  async resetPassword(id: string, password: string, actor: AuthUser): Promise<UserView> {
-    const user = await this.manageable(id, actor, this.dataSource.manager);
-    await this.dataSource.getRepository(User).update({ id: user.id }, { passwordHash: await hashPassword(password) });
-    return this.view(id);
+  resetPassword(id: string, password: string, actor: AuthUser): Promise<UserView> {
+    return this.dataSource.transaction(async (db) => {
+      const user = await this.manageable(id, actor, db);
+      await db.getRepository(User).update({ id: user.id }, { passwordHash: await hashPassword(password) });
+      // Never the password itself, only that it was reset and by whom.
+      await this.audit.record(db, actor, { action: "PASSWORD_RESET", resource: "user", resourceId: id, organizationId: await this.organizationOfParty(user.partyId, db), after: { email: user.email } });
+      return this.view(id, db);
+    });
   }
 
   /** Every user changes their own password, given the current one. */
   async changeOwnPassword(dto: ChangePasswordDto, actor: AuthUser): Promise<void> {
     const user = await this.dataSource.getRepository(User).createQueryBuilder("u").addSelect("u.passwordHash").where("u.id = :id", { id: actor.id }).getOneOrFail();
     if (!(await verifyPassword(dto.currentPassword, user.passwordHash))) throw new BadRequestException("WRONG_PASSWORD: the current password is not correct");
-    await this.dataSource.getRepository(User).update({ id: actor.id }, { passwordHash: await hashPassword(dto.newPassword) });
+    const passwordHash = await hashPassword(dto.newPassword);
+    await this.dataSource.transaction(async (db) => {
+      await db.getRepository(User).update({ id: actor.id }, { passwordHash });
+      await this.audit.record(db, actor, { action: "PASSWORD_CHANGED", resource: "user", resourceId: actor.id, organizationId: await this.organizationOfParty(actor.partyId, db) });
+    });
   }
 
   // ---------------- Helpers ----------------
@@ -141,9 +174,21 @@ export class AccountService {
   private async insertUser(data: { email: string; fullName: string; password: string; role: UserRole; partyId: number | null }, actor: AuthUser, db: EntityManager): Promise<User> {
     const email = data.email.trim().toLowerCase();
     if (await db.getRepository(User).exist({ where: { email } })) throw new ConflictException(`EMAIL_TAKEN: ${email} already has an account`);
-    return db.getRepository(User).save(db.getRepository(User).create({
+    const user = await db.getRepository(User).save(db.getRepository(User).create({
       email, fullName: data.fullName.trim(), passwordHash: await hashPassword(data.password), role: data.role, partyId: data.partyId, createdBy: actor.id,
     }));
+    await this.audit.record(db, actor, {
+      action: "USER_CREATED", resource: "user", resourceId: user.id, organizationId: await this.organizationOfParty(user.partyId, db),
+      after: { email, fullName: user.fullName, role: user.role, partyId: user.partyId },
+    });
+    return user;
+  }
+
+  /** The company (buyer or supplier) an account's party belongs to; null for a platform account. */
+  async organizationOfParty(partyId: number | null, db: EntityManager = this.dataSource.manager): Promise<number | null> {
+    if (partyId === null) return null;
+    const party = await db.getRepository(Party).findOne({ where: { id: partyId } });
+    return party ? (party.type === "APPROVER" ? party.parentId : party.id) : null;
   }
 
   /** The account, if `actor` may manage it: SYSTEM_ADMIN manages platform accounts and company administrators; ORG_ADMIN their own company. */

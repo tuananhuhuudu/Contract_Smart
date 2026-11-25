@@ -6,6 +6,7 @@ import { EventType } from "../models/event-type.entity";
 import { Milestone } from "../models/milestone.entity";
 import { Party } from "../models/party.entity";
 import { EventRepository } from "../repositories/event.repository";
+import { AuditService } from "./audit.service";
 import { EngineService } from "./engine.service";
 import { PaymentService } from "./payment.service";
 import type { CreateEventDto } from "../schemas/contract.schema";
@@ -23,6 +24,7 @@ export class EventService {
     private readonly events: EventRepository,
     private readonly engine: EngineService,
     private readonly payments: PaymentService,
+    private readonly audit: AuditService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -76,6 +78,11 @@ export class EventService {
         milestoneId: milestone.id, eventTypeId: type.id, status: type.validStatus, partyId: party.id, recordedBy: user.id,
         happenedAt, documentNo: dto.documentNo || null, resolvesEventId, note: dto.note?.trim() ?? "",
       }, db);
+      const action = type.category === "DISPUTE_OPEN" ? "DISPUTE_OPENED" : type.category === "DISPUTE_RESOLVE" ? "DISPUTE_CLOSED" : "EVENT_RECORDED";
+      await this.audit.record(db, user, {
+        action, resource: "event", resourceId: event.id, contractId: contract.id,
+        after: { milestoneId: milestone.id, eventType: type.name, partyId: party.id, happenedAt, documentNo: event.documentNo, resolvesEventId, note: event.note },
+      });
       // The engine judges the milestone again with this event included.
       await this.engine.evaluateQuietly(contract.id, { milestoneIds: [milestone.id], triggerEventId: event.id }, db);
       return event;

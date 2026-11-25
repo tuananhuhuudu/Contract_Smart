@@ -6,6 +6,7 @@ import { Contract } from "../models/contract.entity";
 import { MilestoneEvaluation } from "../models/milestone-evaluation.entity";
 import { Milestone } from "../models/milestone.entity";
 import { Payment } from "../models/payment.entity";
+import { AuditService } from "./audit.service";
 import type { PaymentListQuery } from "../schemas/payment.schema";
 import { Paginated, pageMeta, toSkipTake } from "../utils/paging";
 
@@ -19,7 +20,10 @@ const PAYING = new Set(["RELEASE", "PENALTY"]);
  */
 @Injectable()
 export class PaymentService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly audit: AuditService,
+  ) {}
 
   /**
    * Called after every engine run, in the same transaction. For each new evaluation:
@@ -28,7 +32,7 @@ export class PaymentService {
    *  - pays another amount, or no longer pays: cancel the pending order (and open a new one if it pays).
    * A PAID order is never touched (the engine does not evaluate paid milestones).
    */
-  async sync(evaluations: MilestoneEvaluation[], db: EntityManager): Promise<void> {
+  async sync(evaluations: MilestoneEvaluation[], db: EntityManager, contractId: number): Promise<void> {
     const repo = db.getRepository(Payment);
     for (const e of evaluations) {
       const open = await repo.findOne({ where: { milestoneId: e.milestoneId, status: In(["PENDING", "PAID"]) } });
@@ -38,10 +42,20 @@ export class PaymentService {
       if (same) continue;
       if (open) {
         const why = pays ? `engine chấm lại ra số tiền khác (${e.payableVndMn} tr)` : `engine chấm lại: ${e.decision} ${e.reasonCode}`;
-        await repo.update({ id: open.id, status: "PENDING" }, { status: "CANCELLED", note: `Hủy vì ${why}, lần chấm #${e.id}` });
+        const note = `Hủy vì ${why}, lần chấm #${e.id}`;
+        await repo.update({ id: open.id, status: "PENDING" }, { status: "CANCELLED", note });
+        await this.audit.record(db, null, {
+          action: "PAYMENT_CANCELLED", resource: "payment", resourceId: open.id, contractId,
+          before: { status: "PENDING", amountVndMn: open.amountVndMn }, after: { status: "CANCELLED" }, reason: note,
+        });
       }
-      if (pays)
-        await repo.save(repo.create({ milestoneId: e.milestoneId, evaluationId: e.id, amountVndMn: e.payableVndMn, penaltyVndMn: e.penaltyVndMn }));
+      if (pays) {
+        const order = await repo.save(repo.create({ milestoneId: e.milestoneId, evaluationId: e.id, amountVndMn: e.payableVndMn, penaltyVndMn: e.penaltyVndMn }));
+        await this.audit.record(db, null, {
+          action: "PAYMENT_OPENED", resource: "payment", resourceId: order.id, contractId,
+          after: { milestoneId: e.milestoneId, evaluationId: e.id, decision: e.decision, amountVndMn: order.amountVndMn, penaltyVndMn: order.penaltyVndMn },
+        });
+      }
     }
   }
 
@@ -104,6 +118,10 @@ export class PaymentService {
 
       const gatewayRef = await this.sendToGateway(payment);
       await db.getRepository(Payment).update({ id, version }, { status: "PAID", approvedBy: user.id, paidAt: new Date(), gatewayRef });
+      await this.audit.record(db, user, {
+        action: "PAYMENT_APPROVED", resource: "payment", resourceId: id, contractId: contract.id,
+        before: { status: "PENDING" }, after: { status: "PAID", milestoneId: payment.milestoneId, amountVndMn: payment.amountVndMn, gatewayRef },
+      });
       await this.closeIfSettled(contract.id, db);
       return db.getRepository(Payment).findOneOrFail({ where: { id } });
     });
@@ -125,8 +143,13 @@ export class PaymentService {
     const latest = await db.getRepository(MilestoneEvaluation).createQueryBuilder("e").distinctOn(["e.milestone_id"])
       .where("e.milestone_id IN (:...ids)", { ids }).orderBy("e.milestone_id").addOrderBy("e.evaluated_at", "DESC").addOrderBy("e.id", "DESC").getMany();
     const rejected = new Set(latest.filter((e) => e.decision === "REJECT").map((e) => e.milestoneId));
-    if (ids.every((m) => paid.has(m) || rejected.has(m)))
+    if (ids.every((m) => paid.has(m) || rejected.has(m))) {
       await db.getRepository(Contract).update({ id: contractId, status: "ACTIVE" }, { status: "CLOSED" });
+      await this.audit.record(db, null, {
+        action: "CONTRACT_CLOSED", resource: "contract", resourceId: contractId, contractId,
+        before: { status: "ACTIVE" }, after: { status: "CLOSED" }, reason: "Mọi mốc đã chi hoặc bị từ chối",
+      });
+    }
   }
 
   private async load(id: number, db: EntityManager): Promise<{ payment: Payment; contract: Contract }> {

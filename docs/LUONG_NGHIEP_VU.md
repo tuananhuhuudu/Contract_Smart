@@ -42,7 +42,7 @@
 - **Giải pháp:** điều kiện trả tiền được viết thành **luật** ngay trên web. Các bên **ghi sự kiện** (đã giao hàng, đã nghiệm thu, đã duyệt...) lên hệ thống. Sau mỗi sự kiện, **engine tự chấm** mốc: trả, giữ, từ chối hay trả có trừ phạt; bao nhiêu tiền; **vì sao**.
 - **Người tham gia:** quản trị dựng quy trình; bên mua soạn hợp đồng, xác nhận, phê duyệt và chi tiền; nhà cung cấp nộp chứng từ.
 - **Luồng:** dựng quy trình → soạn hợp đồng → ký → ghi sự kiện → engine chấm → (ngoại lệ) → chi tiền → thanh lý.
-- **Đã chạy được:** từ dựng quy trình tới engine chấm, giải thích và chi tiền (cổng thanh toán mô phỏng). **Chưa làm:** ký hai bên, ngoại lệ, phụ lục, thanh lý, nhật ký kiểm toán.
+- **Đã chạy được:** từ dựng quy trình tới engine chấm, giải thích và chi tiền (cổng thanh toán mô phỏng). Có **nhật ký kiểm toán** chuỗi băm. **Chưa làm:** ký hai bên, ngoại lệ, phụ lục, thanh lý.
 
 ---
 
@@ -130,19 +130,19 @@ Hợp đồng còn quy định: được trễ 3 ngày; trễ hơn thì phạt 0
 ┌─ NỀN TẢNG: người vận hành hệ thống, không thuộc công ty nào ──────────┐
 │  Quản trị hệ thống      dựng quy trình: loại sự kiện, mốc, luật,        │
 │                         loại hợp đồng; mở và khóa công ty               │
-│  Kiểm toán              chỉ xem; xem được mọi hợp đồng                  │
+│  Kiểm toán              chỉ xem; mọi hợp đồng, nhật ký, kiểm chuỗi băm  │
 └────────────────────────────────────────────────────────────────────────┘
 ┌─ BÊN MUA: người trả tiền (ví dụ Nova An) ──────────────────────────────┐
 │  Pháp lý                soạn hợp đồng; ghi chứng từ của bên mua         │
 │  Chủ hợp đồng           soạn hợp đồng; ký / kích hoạt; phê duyệt        │
 │  Duyệt tài chính        phê duyệt; duyệt lệnh chi                       │
 │  Duyệt thứ hai          phê duyệt                                       │
-│  Kiểm soát viên         duyệt ngoại lệ                                  │
+│  Kiểm soát viên         xem nhật ký công ty mình; duyệt ngoại lệ ⏳      │
 │  Quản trị công ty       tạo, đổi vai, khóa tài khoản nhân viên          │
 └────────────────────────────────────────────────────────────────────────┘
 ┌─ BÊN BÁN: người nhận tiền (ví dụ Phú Minh) ────────────────────────────┐
 │  Nhà cung cấp           ghi chứng từ của mình: giao hàng, hóa đơn...     │
-│  Kiểm soát viên         theo dõi bên mua chi đúng hợp đồng              │
+│  Kiểm soát viên         xem nhật ký; theo dõi bên mua chi đúng          │
 │  Quản trị công ty       tạo, đổi vai, khóa tài khoản nhân viên          │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -153,7 +153,7 @@ Hợp đồng còn quy định: được trễ 3 ngày; trễ hơn thì phạt 0
 | --- | --- | --- | --- |
 | **Quản trị hệ thống** | Bộ phận IT / vận hành nền tảng | Tạo loại sự kiện, mốc mẫu, luật, loại hợp đồng; công bố phiên bản; **mở công ty** kèm quản trị công ty đầu tiên; khóa công ty | Tạo hợp đồng, ghi sự kiện, duyệt chi, xử lý ngoại lệ; **tạo nhân viên thay công ty** |
 | **Quản trị công ty** (mỗi công ty) | Bộ phận nhân sự / IT của công ty | Tạo, đổi vai, khóa, đặt lại mật khẩu **nhân viên công ty mình**, chỉ với vai hợp loại công ty | Đụng tới công ty khác; tự đổi vai hay tự khóa mình; soạn, duyệt, chi hợp đồng |
-| **Kiểm toán** | Kiểm toán nội bộ / độc lập | Xem mọi hợp đồng, sự kiện, kết quả chấm | Mọi thao tác ghi |
+| **Kiểm toán** | Kiểm toán nội bộ / độc lập | Xem mọi hợp đồng, sự kiện, kết quả chấm, **toàn bộ nhật ký** và kiểm tra chuỗi băm | Mọi thao tác ghi |
 | **Pháp lý** (bên mua) | Phòng pháp chế | Tạo và sửa hợp đồng nháp; dùng luật riêng; ghi chứng từ phía bên mua (ký hợp đồng, nghiệm thu) | Ký / kích hoạt; phê duyệt |
 | **Chủ hợp đồng** (bên mua) | Trưởng bộ phận phụ trách hợp đồng | Như pháp lý, thêm **ký / kích hoạt** và **phê duyệt** | Tự duyệt ngoại lệ do mình đề xuất ⏳ |
 | **Duyệt tài chính** (bên mua) | Kế toán trưởng / giám đốc tài chính | Phê duyệt (khi hợp đồng yêu cầu); **duyệt lệnh chi** | Sửa hợp đồng |
@@ -703,11 +703,37 @@ Sau khi ký, điều khoản bị khóa. Nếu cần **dời hạn** (ví dụ n
 
 ---
 
-### 5.8. Tính năng xuyên suốt ⏳
+### 5.8. Tính năng xuyên suốt 🟡
+
+#### Nhật ký kiểm toán ✅
+
+Mọi thao tác (đăng nhập sai, mở / khóa công ty, tạo / khóa tài khoản, tạo / sửa / kích hoạt hợp đồng, ghi sự kiện, engine chấm, lập / hủy / duyệt lệnh chi, đóng hợp đồng) thêm **một dòng nhật ký trong cùng giao dịch**. Nhật ký là của **nền tảng**, không của riêng bên nào.
+
+Ví dụ vài dòng:
+
+| # | Lúc | Ai | Làm gì | Nội dung |
+| --- | --- | --- | --- | --- |
+| 7 | 10:58 | Hệ thống | Lập lệnh chi, HĐ #1 | mốc 1, 394 triệu |
+| 10 | 10:59 | Hệ thống | Đăng nhập thất bại | supplier@phuminh.vn, sai mật khẩu |
+| 11 | 10:59 | finance@novaan.vn (Duyệt tài chính, Nova An) | Duyệt chi, HĐ #1 | PENDING → PAID, mã giao dịch SIM-1-… |
+| 12 | 10:59 | admin@phuminh.vn (Quản trị công ty) | Tạo tài khoản | ketoan@phuminh.vn, vai Kiểm soát |
+
+**Không sửa được:** CSDL chặn sửa, xóa, TRUNCATE, kể cả quản trị hệ thống. Mỗi dòng giữ **mã băm của dòng trước**: nếu ai đó tắt trigger rồi sửa lén dòng 12, nút **Kiểm tra chuỗi băm** của kiểm toán báo "chuỗi đứt ở dòng #12"; xóa dòng 5 thì báo "thiếu dòng 5".
+
+**Ai xem gì** (tab **5. Nhật ký**):
+
+| Vai | Thấy | Dùng để |
+| --- | --- | --- |
+| Kiểm toán (nền tảng) | Toàn bộ, và kiểm tra chuỗi băm | Rà soát độc lập, chứng minh dữ liệu không bị sửa |
+| Kiểm soát (mỗi công ty) | Hợp đồng của công ty mình + việc nhân viên công ty mình làm | Kiểm tra nội bộ |
+| Quản trị công ty | Việc về tài khoản công ty mình, đăng nhập sai | Quản lý nhân viên |
+| Quản trị hệ thống | Mở / khóa công ty, tài khoản; **không** thấy nội dung hợp đồng | Quản trị nền tảng |
+| Người làm hợp đồng | Lịch sử các hợp đồng công ty mình tham gia | Đối chiếu khi tranh chấp |
+
+#### Còn lại ⏳
 
 | Tính năng | Nội dung | Ví dụ |
 | --- | --- | --- |
-| **Nhật ký kiểm toán** | Mọi thao tác ghi (tạo hợp đồng, ký, ghi sự kiện, chấm, duyệt chi...) thêm một dòng nhật ký. Mỗi dòng chứa **mã băm của dòng trước** (chuỗi băm), nên sửa hay xóa một dòng giữa chừng là bị phát hiện. Không ai sửa, xóa được | "14:15 – owner@novaan.vn – ghi sự kiện #15 (Đóng tranh chấp) – hợp đồng #1" |
 | **Việc cần làm / thông báo** | Mỗi người thấy danh sách việc của mình | Nhà cung cấp: "mốc Giao hàng còn thiếu Hóa đơn". Chủ hợp đồng: "2 mốc chờ bạn duyệt". Tài chính: "1 lệnh chi chờ duyệt" |
 | **Tổng quan nhiều hợp đồng** | Dashboard theo công ty | Bao nhiêu mốc đang giữ; đã chi bao nhiêu; mốc nào sắp tới hạn |
 
@@ -1009,6 +1035,7 @@ Sự kiện sai vẫn được lưu làm bằng chứng. Mốc này bị kẹt c
 | | `events` | Sự kiện: loại, bên ghi, người bấm, lúc xảy ra, số giấy tờ |
 | 5. Chấm và chi | `milestone_evaluations` | Kết quả chấm: quyết định, tiền, luật, giải thích |
 | | `payments` | Lệnh chi: chờ duyệt / đã chi / đã hủy, ai duyệt, mã giao dịch |
+| | `audit_log` | Nhật ký kiểm toán: ai làm gì, lúc nào; chuỗi băm, không sửa xóa |
 
 ### 10.3. Bảng dự kiến
 
@@ -1019,7 +1046,6 @@ Sự kiện sai vẫn được lưu làm bằng chứng. Mốc này bị kẹt c
 | `exceptions` | Đề xuất và quyết định vô hiệu sự kiện |
 | `amendments` | Phụ lục dời hạn |
 | `liquidations` | Biên bản thanh lý |
-| `audit_log` | Nhật ký kiểm toán dạng chuỗi băm |
 
 ---
 
@@ -1042,12 +1068,11 @@ Kèm theo: đăng nhập, phân quyền theo vai và theo công ty, khóa dữ l
 | Ưu tiên | Việc | Vì sao làm trước |
 | --- | --- | --- |
 | 1 | **Ký hai bên**: văn bản, mã băm, ký theo thứ tự | Hợp đồng chỉ có hiệu lực khi cả hai bên đồng ý |
-| 2 | **Nhật ký kiểm toán** chuỗi băm | Các thao tác làm sau đều cần ghi nhật ký |
-| 3 | **Xử lý ngoại lệ** hai người duyệt | Gỡ các mốc bị kẹt do ghi nhầm |
-| 4 | **Chứng từ có file**, kiểm hóa đơn | Chứng từ có giá trị thật thay vì chỉ một dòng chữ |
-| 5 | **Phụ lục, thanh lý** | Hoàn tất vòng đời hợp đồng |
-| 6 | Kiểm an toàn bộ luật | Chặn cấu hình sai từ gốc |
-| 7 | Việc cần làm, dashboard, cảnh báo trình tự, AI đọc PDF | Tiện ích, làm khi còn thời gian |
+| 2 | **Xử lý ngoại lệ** hai người duyệt | Gỡ các mốc bị kẹt do ghi nhầm |
+| 3 | **Chứng từ có file**, kiểm hóa đơn | Chứng từ có giá trị thật thay vì chỉ một dòng chữ |
+| 4 | **Phụ lục, thanh lý** | Hoàn tất vòng đời hợp đồng |
+| 5 | Kiểm an toàn bộ luật | Chặn cấu hình sai từ gốc |
+| 6 | Việc cần làm, dashboard, cảnh báo trình tự, AI đọc PDF | Tiện ích, làm khi còn thời gian |
 
 **Song song (yêu cầu của môn học):** chuyển giao diện sang **React + Vite**; viết ít nhất **15 test** (Vitest / React Testing Library), độ phủ **≥ 50%**.
 
@@ -1077,7 +1102,7 @@ Hiện mỗi mốc được chấm **độc lập**, giống dữ liệu của b
 Không. Engine chấm theo luật rõ ràng nên lần nào chấm cũng ra cùng kết quả và giải thích được. AI chỉ được dự kiến dùng để **đề xuất** điều khoản khi đọc file PDF hợp đồng; người dùng phải xác nhận.
 
 **Kiểm toán làm sao biết kết quả không bị sửa?**
-Hiện tại: kết quả chấm chỉ được thêm, trigger trong DB chặn sửa và xóa. Khi có nhật ký kiểm toán chuỗi băm (⏳), mọi thao tác còn được niêm phong, sửa một dòng là bị phát hiện.
+Hai lớp. (1) Kết quả chấm, sự kiện, lệnh chi và nhật ký chỉ được thêm: trigger trong DB chặn sửa và xóa. (2) Nhật ký kiểm toán nối chuỗi băm: nếu ai đó tắt trigger để sửa lén, nút **Kiểm tra chuỗi băm** chỉ ra đúng dòng bị sửa hoặc bị xóa.
 
 ---
 

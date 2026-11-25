@@ -9,6 +9,7 @@ import { MilestoneEvaluation, type EvaluationFacts } from "../models/milestone-e
 import { Milestone } from "../models/milestone.entity";
 import { Party } from "../models/party.entity";
 import { PaymentRule } from "../models/payment-rule.entity";
+import { AuditService } from "./audit.service";
 import { PaymentService } from "./payment.service";
 import { percentOf } from "../utils/money";
 
@@ -67,6 +68,7 @@ export class EngineService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly payments: PaymentService,
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -84,8 +86,13 @@ export class EngineService {
       payableVndMn: r.payable, penaltyVndMn: r.penalty, facts: this.facts(r, codeToName),
     }));
     const saved = await manager.getRepository(MilestoneEvaluation).save(rows);
+    for (const e of saved)
+      await this.audit.record(manager, null, {
+        action: "MILESTONE_EVALUATED", resource: "evaluation", resourceId: e.id, contractId,
+        after: { milestoneId: e.milestoneId, decision: e.decision, reasonCode: e.reasonCode, payableVndMn: e.payableVndMn, penaltyVndMn: e.penaltyVndMn, ruleId: e.ruleId, triggerEventId: e.triggerEventId },
+      });
     // Open, keep or cancel the payment order of each milestone according to the new decision.
-    await this.payments.sync(saved, manager);
+    await this.payments.sync(saved, manager, contractId);
     return saved;
   }
 

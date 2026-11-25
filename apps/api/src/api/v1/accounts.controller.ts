@@ -20,8 +20,8 @@ export class AccountsController {
   @Patch("organizations/:id")
   @Roles("SYSTEM_ADMIN")
   @ApiOperation({ summary: "[Quản trị hệ thống] Khóa / mở khóa cả công ty: khi khóa, nhân viên công ty không đăng nhập được" })
-  updateOrganization(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateOrganizationDto) {
-    return this.service.updateOrganization(id, dto);
+  updateOrganization(@Param("id", ParseIntPipe) id: number, @Body() dto: UpdateOrganizationDto, @CurrentUser() user: AuthUser) {
+    return this.service.updateOrganization(id, dto, user);
   }
 
   @Get("users")

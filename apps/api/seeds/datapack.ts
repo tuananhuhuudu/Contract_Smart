@@ -11,6 +11,7 @@ import path from "node:path";
 import dataSource from "../src/core/data-source";
 import { hashPassword } from "../src/core/security/password";
 import { EngineService } from "../src/services/engine.service";
+import { AuditService } from "../src/services/audit.service";
 import { PaymentService } from "../src/services/payment.service";
 
 const DATA_DIR = path.join(__dirname, "..", "..", "..", "data", "datapack");
@@ -64,10 +65,10 @@ async function main(): Promise<void> {
 
     // Empty every table the seed fills. The lock triggers (append-only events, published versions,
     // active contracts) are switched off for this statement only, inside the same transaction.
-    const guarded = ["payments", "milestone_evaluations", "events", "milestones", "contracts", "payment_rules", "milestone_versions"];
+    const guarded = ["audit_log", "payments", "milestone_evaluations", "events", "milestones", "contracts", "payment_rules", "milestone_versions"];
     for (const t of guarded) await db.query(`ALTER TABLE ${t} DISABLE TRIGGER USER`);
     await db.query(`TRUNCATE parties, users, milestone_library, milestone_versions, payment_rules,
-      contract_types, contract_type_milestones, contracts, milestones, events, milestone_evaluations, payments RESTART IDENTITY`);
+      contract_types, contract_type_milestones, contracts, milestones, events, milestone_evaluations, payments, audit_log RESTART IDENTITY`);
     for (const t of guarded) await db.query(`ALTER TABLE ${t} ENABLE TRIGGER USER`);
 
     // ---------- Group 1: parties (buyers and suppliers first, approvers point at their buyer) ----------
@@ -189,7 +190,11 @@ async function main(): Promise<void> {
         `INSERT INTO milestones (contract_id, position, milestone_version_id, amount_vnd_mn, due_on) VALUES ($1, $2, $3, $4, $5)`,
         [c2, i + 1, versionOf.get(m.release_rule_code), shares[i], addDays(today, daysAfterStart(m.due_date))]);
     // The engine judges contract 1 once, as the API does when a contract is activated.
-    const judged = await new EngineService(dataSource, new PaymentService(dataSource)).evaluateContract(c1, {}, db);
+    const audit = new AuditService(dataSource);
+    // The audit log starts here: the seeded contracts are recorded as loaded by the system, not as someone's action.
+    for (const [id, status] of [[c1, "ACTIVE"], [c2, "DRAFT"]] as const)
+      await audit.record(db, null, { action: "CONTRACT_CREATED", resource: "contract", resourceId: id, contractId: id, after: { status }, reason: "Nạp dữ liệu mẫu (seed)" });
+    const judged = await new EngineService(dataSource, new PaymentService(dataSource, audit), audit).evaluateContract(c1, {}, db);
     console.log(`engine: ${judged.map((e) => `${e.milestoneId} ${e.decision} ${e.reasonCode}`).join("; ")}`);
     const orders: { n: number }[] = await db.query(`SELECT count(*)::int AS n FROM payments WHERE status = 'PENDING'`);
     console.log(`payments: ${orders[0].n} orders waiting for the finance approver`);

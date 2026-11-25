@@ -24,6 +24,7 @@ import type { AuthUser } from "../core/security/decorators";
 import { percentOf, rescale, shareOf, splitByPercent, sumAmounts } from "../utils/money";
 import type { Paginated } from "../utils/paging";
 import { BaseService } from "./base.service";
+import { AuditService } from "./audit.service";
 import { EngineService } from "./engine.service";
 import { PaymentService } from "./payment.service";
 import { MilestoneLibraryService } from "./milestone-library.service";
@@ -81,6 +82,7 @@ export class ContractService extends BaseService<Contract, "id"> {
     private readonly libraryService: MilestoneLibraryService,
     private readonly engine: EngineService,
     private readonly payments: PaymentService,
+    private readonly audit: AuditService,
     private readonly dataSource: DataSource,
   ) {
     super(repository);
@@ -154,6 +156,11 @@ export class ContractService extends BaseService<Contract, "id"> {
         contractId: contract.id, position: t.position, milestoneVersionId: versionIds[i],
         amountVndMn: amounts[i], dueOn: addDays(dto.startOn, t.dueAfterDays),
       })), db);
+      await this.audit.record(db, user, {
+        action: "CONTRACT_CREATED", resource: "contract", resourceId: contract.id, contractId: contract.id,
+        after: { title: contract.title, contractTypeId: type.id, buyerId: dto.buyerId, supplierId: dto.supplierId, valueVndMn: dto.valueVndMn,
+          startOn: dto.startOn, endOn: dto.endOn, approvalPolicy: contract.approvalPolicy, milestones: template.length },
+      });
       return this.getContract(contract.id, db);
     });
   }
@@ -176,6 +183,13 @@ export class ContractService extends BaseService<Contract, "id"> {
       }
       const shift = changes.startOn === undefined ? 0 : daysBetween(contract.startOn, changes.startOn);
       if (shift) for (const m of await this.milestones.listByContract(id, db)) await this.milestones.update(m.id, m.version, { dueOn: addDays(m.dueOn, shift) }, db);
+      const old = contract as unknown as Record<string, unknown>;
+      const changed = Object.keys(changes).filter((k) => old[k] !== (changes as Record<string, unknown>)[k]);
+      if (changed.length)
+        await this.audit.record(db, user, {
+          action: "CONTRACT_UPDATED", resource: "contract", resourceId: id, contractId: id,
+          before: Object.fromEntries(changed.map((k) => [k, old[k]])), after: Object.fromEntries(changed.map((k) => [k, (changes as Record<string, unknown>)[k]])),
+        });
       return this.getContract(id, db);
     });
   }
@@ -204,6 +218,10 @@ export class ContractService extends BaseService<Contract, "id"> {
         await this.versions.update(v.id, v.version, { status: "PUBLISHED", publishedAt: new Date() }, db);
       }
       await this.repository.update(id, expectedVersion, { status: "ACTIVE" }, db);
+      await this.audit.record(db, user, {
+        action: "CONTRACT_ACTIVATED", resource: "contract", resourceId: id, contractId: id,
+        before: { status: "DRAFT" }, after: { status: "ACTIVE", valueVndMn: detail.valueVndMn, milestones: detail.milestones.length, customRules: custom.map((m) => m.name) },
+      });
       // First decision of every milestone (usually "waiting for evidence").
       await this.engine.evaluateQuietly(id, {}, db);
       return this.getContract(id, db);
@@ -223,10 +241,14 @@ export class ContractService extends BaseService<Contract, "id"> {
       const rows = await this.milestones.listByContract(contractId, db);
       if (rows.some((m) => m.milestoneVersion.milestoneId === milestone.id))
         throw new ConflictException(`Milestone "${milestone.name}" is already in this contract`);
-      await this.milestones.create({
+      const added = await this.milestones.create({
         contractId, position: rows.length + 1, milestoneVersionId: published.id,
         amountVndMn: shareOf(contract.valueVndMn, dto.paymentPercent), dueOn: dto.dueOn,
       }, db);
+      await this.audit.record(db, user, {
+        action: "MILESTONE_ADDED", resource: "milestone", resourceId: added.id, contractId,
+        after: { name: milestone.name, amountVndMn: added.amountVndMn, dueOn: dto.dueOn },
+      });
       await this.milestones.renumber(contractId, db);
       return this.getContract(contractId, db);
     });
@@ -242,6 +264,11 @@ export class ContractService extends BaseService<Contract, "id"> {
         dueOn: dto.dueOn,
       });
       await this.milestones.update(id, dto.version, changes, db);
+      const old = milestone as unknown as Record<string, unknown>;
+      await this.audit.record(db, user, {
+        action: "MILESTONE_UPDATED", resource: "milestone", resourceId: id, contractId: contract.id,
+        before: Object.fromEntries(Object.keys(changes).map((k) => [k, old[k]])), after: changes,
+      });
       await this.milestones.renumber(contract.id, db);
       return this.getContract(contract.id, db);
     });
@@ -254,6 +281,10 @@ export class ContractService extends BaseService<Contract, "id"> {
       await this.draftOrFail(milestone.contractId, db, user);
       const version = await this.versions.findById(milestone.milestoneVersionId, db);
       await this.milestones.delete(id, expectedVersion, db);
+      await this.audit.record(db, user, {
+        action: "MILESTONE_REMOVED", resource: "milestone", resourceId: id, contractId: milestone.contractId,
+        before: { milestoneVersionId: version.id, amountVndMn: milestone.amountVndMn, dueOn: milestone.dueOn, customRules: version.isCustom },
+      });
       if (version.isCustom) await db.getRepository(MilestoneVersion).delete(version.id);
       await this.milestones.renumber(milestone.contractId, db);
       return this.getContract(milestone.contractId, db);
@@ -269,6 +300,10 @@ export class ContractService extends BaseService<Contract, "id"> {
       if (current.isCustom) throw new ConflictException(`Milestone ${id} already has its own rules (version ${current.id})`);
       const copy = await this.libraryService.createCustomCopy(current.id, db);
       await this.milestones.update(id, milestone.version, { milestoneVersionId: copy.id }, db);
+      await this.audit.record(db, user, {
+        action: "MILESTONE_CUSTOM_RULES", resource: "milestone", resourceId: id, contractId: milestone.contractId,
+        before: { milestoneVersionId: current.id }, after: { milestoneVersionId: copy.id },
+      });
       return this.getContract(milestone.contractId, db);
     });
   }
@@ -283,6 +318,10 @@ export class ContractService extends BaseService<Contract, "id"> {
       const published = await this.versions.findPublished(custom.milestoneId, db);
       if (!published) throw new BadRequestException(`Milestone ${custom.milestoneId} has no published shared version`);
       await this.milestones.update(id, milestone.version, { milestoneVersionId: published.id }, db);
+      await this.audit.record(db, user, {
+        action: "MILESTONE_SHARED_RULES", resource: "milestone", resourceId: id, contractId: milestone.contractId,
+        before: { milestoneVersionId: custom.id }, after: { milestoneVersionId: published.id },
+      });
       await db.getRepository(MilestoneVersion).delete(custom.id);
       return this.getContract(milestone.contractId, db);
     });
